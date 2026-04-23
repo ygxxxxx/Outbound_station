@@ -1,0 +1,29 @@
+# 1. Python 虚拟环境（必须屏蔽）
+.venv/
+venv/
+env/
+
+# 2. VS Code 编辑器配置（可选屏蔽，避免上传个人设置）
+.vscode/
+
+# 3. Python 编译文件与缓存
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 4. 日志与临时文件
+logs/
+*.log
+*.tmp
+*.temp
+temp/
+
+docs/
+!出库工作站上位机功能设计及工作安排*.pdf
+!智能分拣软件的功能设计*.docx
