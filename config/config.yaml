@@ -1,16 +1,14 @@
-# 通信相关配置
-communication:
-    # PLC 通信设置
-    plc:
-        ip_address: ""           # PLC 地址
-        port:                    # PLC 端口号
-        timeout: 5000            # 通信超时时间 (ms) 
-        read_cycle: 10           # PLC 读取周期（ms）
+# PLC 通信设置
+PLC:
+    plc_address: ""           # PLC 地址
+    plc_port:                    # PLC 端口号
+    timeout: 5000            # 通信超时时间 (ms) 
+    read_cycle: 10           # PLC 读取周期（ms）
 
-    # RCS 接口设置
-    rcs:
-        server_address: ""      # RCS 接口地址
-        port:                   # RCS 端口号
+# RCS 接口设置
+RCS:
+    rcs_address: ""      # RCS 接口地址
+    rcs_port:                   # RCS 端口号
 
 # 工作站设备配置
 workstation:
@@ -26,7 +24,7 @@ conveyor:
 
 # 扫码配置
 scanner:
-    timeout: 500                # 扫码超时(ms)
+    scanner_timeout: 500                # 扫码超时(ms)
 
 # 异常处理配置
 exception:
