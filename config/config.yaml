@@ -1,0 +1,33 @@
+# 通信相关配置
+communication:
+    # PLC 通信设置
+    plc:
+        ip_address: ""           # PLC 地址
+        port:                    # PLC 端口号
+        timeout: 5000            # 通信超时时间 (ms) 
+        read_cycle: 10           # PLC 读取周期（ms）
+
+    # RCS 接口设置
+    rcs:
+        server_address: ""      # RCS 接口地址
+        port:                   # RCS 端口号
+
+# 工作站设备配置
+workstation:
+    count: 3                    # 工作站数量
+    gripper_count: 2            # 每台夹爪数量
+    cabinet_layers: 4           # 收纳柜层数
+    max_stacks_per_layer: 4     # 每层堆数
+
+# 输送线配置
+conveyor:
+    cargo_min_spacing: 300      # 货物最小间距（mm）
+    speed: 1.5                  # 输送线速度(m/s)
+
+# 扫码配置
+scanner:
+    timeout: 500                # 扫码超时(ms)
+
+# 异常处理配置
+exception:
+    max_retry_count: 3          # 最大重试次数

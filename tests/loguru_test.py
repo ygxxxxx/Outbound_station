@@ -18,3 +18,23 @@ with logger.contextualize(programer = "want"):
 child = logger.bind(foo = "bar", hello = "world")
 
 child.info("mes from child logger")
+
+
+@logger.contextualize(bar = "baz")
+def test():
+    logger.info("mes from test func")
+
+test()
+
+
+try:
+    1/0
+except:
+    logger.exception("An error occurred")
+
+with logger.catch(ZeroDivisionError, level = "WARNING"):
+    1 / 0 
+
+@logger.catch()
+def test2():
+    logger.info("mes from test func")
