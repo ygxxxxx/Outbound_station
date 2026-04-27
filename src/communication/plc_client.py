@@ -1,6 +1,9 @@
 import socket
 from src.utils.logger import logger
 from src.exception.exception import PLCCommunicationError
+import time 
+import threading
+
 
 logger = logger.bind(tag = "PLCClient")
 
@@ -11,6 +14,7 @@ class PLCClient:
         self.port = port
         self.connected = False
         self.sock = None
+        self.thread = threading.Thread(target=self.receive_data, daemon=True) # 接收线程
 
     # 连接PLC
     def connect_to_plc(self):
