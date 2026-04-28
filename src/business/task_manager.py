@@ -1,6 +1,7 @@
 from collections import deque
 from src.communication.plc_client import PLCClient
 from src.communication.rcs_client import RCSClient
+from src.models.outbound_task_model import OutboundTask
 
 from src.utils.logger import logger
 
@@ -9,11 +10,13 @@ import time
 
 logger = logger.bind(tag="TaskManager")
 
-
 class QueueTask:
-    def __init__(self, task_id: str, task_data: dict):
-        self.task_id = task_id
-        self.task_data = task_data
+    def __init__(self, task: OutboundTask):
+        self.task_id = task.task_id
+        self.status = "pending"  
+        self.task = task
+        self.start_time = None
+        self.end_time = None
 
 
 class TaskManager:
@@ -28,6 +31,8 @@ class TaskManager:
         # 初始化接收PLC和RCS的客户端
         self.plc_clients = plc_clients
         self.rcs_client = rcs_client
+
+        self.rcs_client.on_dispatch = self._on_task_dispatch
 
         # 最大同时处理任务数,以及任务保留时间（单位：秒）
         self.maxrunning_tasks = maxrunning_tasks
@@ -96,6 +101,7 @@ class TaskManager:
     def _add_to_running(self, task: QueueTask) -> None:
         with self.rlock:
             self._running[task.task_id] = task
+            task.start_time = time.time()
             logger.debug(f"任务移入执行队列taskid = {task.task_id}")
 
     # 从正在处理队列移除任务
@@ -150,3 +156,7 @@ class TaskManager:
         t = threading.Thread(target=loop, daemon=True)
         t.start()
         logger.info("清理定时器已启动")
+
+    # 任务下发回调函数，接收从RCS下发的新任务，并添加到待处理队列
+    def _on_task_dispatch(self, task: OutboundTask) -> None:
+        self.add_to_pending(QueueTask(task))

@@ -24,7 +24,8 @@ logs/
 *.temp
 temp/
 
-docs/
-!出库工作站上位机功能设计及工作安排*.pdf
-!智能分拣软件的功能设计*.docx
-!任务管理*.md
+docs/*
+!docs/出库工作站上位机功能设计及工作安排*.pdf
+!docs/智能分拣软件的功能设计*.docx
+!docs/任务管理系统.md
+!docs/出库工作站上位机-RCS通信协议*.md
