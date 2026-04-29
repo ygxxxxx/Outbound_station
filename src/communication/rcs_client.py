@@ -11,7 +11,7 @@ logger = logger.bind(tag = "RCSClient")
 
 class RCSClient:
 
-    def __init__(self, port, host, outbound_station_id, on_dispatch = None):
+    def __init__(self, host, port, outbound_station_id, on_dispatch = None):
         self.host = host
         self.port = port
         self.connected = False

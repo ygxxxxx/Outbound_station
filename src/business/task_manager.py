@@ -22,14 +22,14 @@ class QueueTask:
 class TaskManager:
     def __init__(
         self,
-        plc_clients: dict[str, PLCClient],
+        plc_client: PLCClient,
         rcs_client: RCSClient,
         maxrunning_tasks: int = 3,
         retention_seconds: int = 3600,
     ):
 
         # 初始化接收PLC和RCS的客户端
-        self.plc_clients = plc_clients
+        self.plc_clients = plc_client
         self.rcs_client = rcs_client
 
         self.rcs_client.on_dispatch = self._on_task_dispatch

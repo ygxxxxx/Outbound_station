@@ -46,7 +46,7 @@
 
 ## 三、各 type 详细定义
 
-### 3.1 TASK_DISPATCH（出库任务下发）
+### 3.1 TASK_DISPATCH（任务下发：出库 / 放货）
 
 > sender=`"RCS"`, receiver=`"HOST_01"`~`"HOST_NN"`
 
@@ -58,6 +58,7 @@
   "timestamp": "2026-04-28 10:00:00",
   "data": {
     "task_id": "T20260428001",
+    "task_types":"OUTBOUND"
     "packages": [
       {
         "package_id": "PKG001",
@@ -78,6 +79,7 @@
 | 字段                                | 类型     | 必填 | 说明                                 |
 | --------------------------------- | ------ | -- | ---------------------------------- |
 | data.task_id                      | string | 是  | 任务流水号                              |
+| data.task_types                      | string | 是  | 任务类型（放货，出库）                              |
 | data.packages                     | array  | 是  | 出库包裹数据列表                           |
 | data.packages[].package_id        | string | 是  | 包裹ID                               |
 | data.packages[].face_sheet        | string | 否  | 面单信息                               |
@@ -122,6 +124,7 @@
   "timestamp": "2026-04-28 10:35:00",
   "data": {
     "task_id": "T20260428001",
+    "task_types": "OUTBOUND"
     "status": "COMPLETED",
     "completed_goods": 12,
     "total_goods": 12,
@@ -134,6 +137,7 @@
 | 字段                       | 类型     | 必填 | 说明         |
 | ------------------------ | ------ | -- | ---------- |
 | data.task_id             | string | 是  | 任务ID       |
+| data.task_types          | string | 是  | 任务类型（放货，出库）|
 | data.status              | string | 是  | COMPLETED / FAILED |
 | data.completed_goods     | int    | 是  | 已完成货物数量    |
 | data.total_goods         | int    | 是  | 总货物数量      |
@@ -163,7 +167,7 @@
 | --------------------- | ------ | -- | ------------------------------- |
 | data.station_id       | int    | 是  | 工作站编号                            |
 | data.task_id          | string | 否  | 关联任务ID                           |
-| data.previous_state   | string | 是  | 变更前状态（IDLE / READY / OUTBOUNDING / OUTBOUND_COMPLETE / FAULT） |
+| data.previous_state   | string | 是  | 变更前状态（IDLE / READY / OUTBOUND/ DONE/ DELIVERED/ WAITING_DELIVERY/ ERROR） |
 | data.current_state    | string | 是  | 变更后状态                            |
 | data.trigger          | string | 是  | TASK_ASSIGNED / ACTION_START / ALL_ACTIONS_DONE / RESET / ALARM |
 
@@ -186,13 +190,13 @@
 }
 ```
 
-| 字段                       | 类型     | 必填 | 说明          |
-| ------------------------ | ------ | -- | ----------- |
-| data.task_id             | string | 是  | 任务ID        |
-| data.status              | string | 是  | RECEIVED / PLANNING / EXECUTING / PAUSED |
-| data.completed_goods     | int    | 是  | 已完成货物数量     |
-| data.total_goods         | int    | 是  | 总货物数量       |
-| data.completed_packages  | array  | 是  | 已完成的包裹ID列表  |
+| 字段                    | 类型   | 必填 | 说明                          |
+| ----------------------- | ------ | ---- | ----------------------------- |
+| data.task_id            | string | 是   | 任务ID                        |
+| data.status             | string | 是   | RECEIVED / EXECUTING / PAUSED |
+| data.completed_goods    | int    | 是   | 已完成货物数量                |
+| data.total_goods        | int    | 是   | 总货物数量                    |
+| data.completed_packages | array  | 是   | 已完成的包裹ID列表            |
 
 ### 3.6 ALARM（告警与异常上报）
 
@@ -208,22 +212,20 @@
     "level": "ERROR",
     "device": "工作站1-夹爪1",
     "alarm_type": "GRIPPER_FAILURE",
-    "description": "夹爪1抓取失败，货物SKU-A001从收纳位A-01-03取货异常",
     "task_id": "T20260428001",
     "station_id": 1
   }
 }
 ```
 
-| 字段                 | 类型     | 必填 | 说明                                      |
-| ------------------ | ------ | -- | --------------------------------------- |
-| data.alarm_id      | string | 是  | 告警ID                                    |
-| data.level         | string | 是  | INFO / WARNING / ERROR / CRITICAL         |
-| data.device        | string | 是  | `工作站1-夹爪1` / `输送线` / `扫码器`              |
-| data.alarm_type    | string | 是  | 见告警类型编码表                                |
-| data.description   | string | 是  | 告警详细描述                                  |
-| data.task_id       | string | 否  | 关联任务ID                                  |
-| data.station_id    | int    | 否  | 关联工作站编号                                 |
+| 字段            | 类型   | 必填 | 说明                                  |
+| --------------- | ------ | ---- | ------------------------------------- |
+| data.alarm_id   | string | 是   | 告警ID                                |
+| data.level      | string | 是   | INFO / WARNING / ERROR / CRITICAL     |
+| data.device     | string | 是   | `工作站1-夹爪1` / `输送线` / `扫码器` |
+| data.alarm_type | string | 是   | 见告警类型编码表                      |
+| data.task_id    | string | 否   | 关联任务ID                            |
+| data.station_id | int    | 否   | 关联工作站编号                        |
 
 ### 3.7 CONTAINER（收纳柜货位数据上报）
 
@@ -235,66 +237,31 @@
   "receiver": "RCS",
   "timestamp": "2026-04-28 10:05:00",
   "data": {
-    "report_mode": "FULL",
     "station_id": 1,
     "containers": [
       {"location_id": "A-01-03", "status": "OCCUPIED", "goods_id": "SKU-A001", "count": 5},
       {"location_id": "A-01-04", "status": "EMPTY",     "goods_id": "", "count": 0}
     ],
-    "total_slots": 48,
-    "occupied_slots": 23,
-    "empty_slots": 25
+    "total_slots": 24,
+    "occupied_slots": 10,
+    "empty_slots": 14
   }
 }
 ```
 
 | 字段                              | 类型     | 必填 | 说明                                |
 | ------------------------------- | ------ | -- | --------------------------------- |
-| data.report_mode                | string | 是  | FULL（全量同步）/ DELTA（增量变化）          |
 | data.station_id                 | int    | 是  | 工作站编号                             |
 | data.containers                 | array  | 是  | 货位列表                              |
 | data.containers[].location_id   | string | 是  | 货位ID，如 `A-01-03`                  |
 | data.containers[].status        | string | 是  | EMPTY / OCCUPIED                  |
 | data.containers[].goods_id      | string | 是  | 货物SKU编码，空位时为空                     |
 | data.containers[].count         | int    | 是  | 货物数量，空位时为 0                       |
-| data.total_slots                | int    | 否  | 货位总数（FULL 模式）                     |
-| data.occupied_slots             | int    | 否  | 已占用数（FULL 模式）                     |
-| data.empty_slots                | int    | 否  | 空位数（FULL 模式）                      |
+| data.total_slots                | int    | 否  | 货位总数                     |
+| data.occupied_slots             | int    | 否  | 已占用数                     |
+| data.empty_slots                | int    | 否  | 空位数                      |
 
-### 3.8 OUTBOUND_RESULT（单次出库动作结果）
-
-
-```json
-{
-  "type": "OUTBOUND_RESULT",
-  "sender": "HOST_01",
-  "receiver": "RCS",
-  "timestamp": "2026-04-28 10:03:00",
-  "data": {
-    "task_id": "T20260428001",
-    "station_id": 1,
-    "action_id": "ACT_001",
-    "result": "SUCCESS",
-    "goods_id": "SKU-A001",
-    "package_id": "PKG001",
-    "target_line": "高速线1",
-    "quantity": 2
-  }
-}
-```
-
-| 字段                  | 类型     | 必填 | 说明         |
-| ------------------- | ------ | -- | ---------- |
-| data.task_id        | string | 是  | 任务ID       |
-| data.station_id     | int    | 是  | 工作站编号      |
-| data.action_id      | string | 是  | 动作ID       |
-| data.result         | string | 是  | SUCCESS / FAILED |
-| data.goods_id       | string | 是  | 货物SKU编码          |
-| data.package_id     | string | 是  | 包裹ID          |
-| data.target_line    | string | 否  | 目标包装线       |
-| data.quantity       | int    | 是  | 取放数量        |
-
-### 3.9 DEVICE_STATUS（设备状态周期上报）
+### 3.8 DEVICE_STATUS（设备状态周期上报）
 
 
 ```json
@@ -331,7 +298,7 @@
 | data.stations[].conveyor                   | string | 是  | RUNNING / STOPPED / JAMMED                |
 | data.stations[].scanner_online             | bool   | 是  | 扫码器是否在线                                 |
 
-### 3.10 ACK（通用确认）
+### 3.9 ACK（通用确认）
 
 > 确认对方消息已收到，`result=0` 表示接收成功。通过请求-响应 `seq` 匹配原始消息，无需携带被确认消息的字段。
 
@@ -353,7 +320,7 @@
 | data.result | int    | 是  | 0=成功, 1=参数错误, 2=系统繁忙, 3=任务不存在, 4=工作站不可用, 99=未知错误 |
 | data.message | string | 否  | 附加描述                                     |
 
-### 3.11 HEARTBEAT（心跳）
+### 3.10 HEARTBEAT（心跳）
 
 
 ```json
@@ -414,10 +381,10 @@ sequenceDiagram
         HOST->>RCS: sender=HOST_01 recv=RCS | type=STATE_CHANGE (IDLE→READY)
         RCS-->>HOST: sender=RCS recv=HOST_01 | type=ACK
 
-        HOST->>RCS: sender=HOST_01 recv=RCS | type=STATE_CHANGE (READY→OUTBOUNDING)
+        HOST->>RCS: sender=HOST_01 recv=RCS | type=STATE_CHANGE (READY→OUTBOUND)
         RCS-->>HOST: sender=RCS recv=HOST_01 | type=ACK
 
-        HOST->>RCS: sender=HOST_01 recv=RCS | type=CONTAINER (轮询PLC后)
+        HOST->>RCS: sender=HOST_01 recv=RCS | type=CONTAINER 
         RCS-->>HOST: sender=RCS recv=HOST_01 | type=ACK
 
         HOST->>RCS: sender=HOST_01 recv=RCS | type=TASK_PROGRESS / DEVICE_STATUS
@@ -426,16 +393,13 @@ sequenceDiagram
         HOST->>RCS: sender=HOST_01 recv=RCS | type=ALARM
         RCS-->>HOST: sender=RCS recv=HOST_01 | type=ACK
 
-        HOST->>RCS: sender=HOST_01 recv=RCS | type=OUTBOUND_RESULT
-        RCS-->>HOST: sender=RCS recv=HOST_01 | type=ACK
-
-        HOST->>RCS: sender=HOST_01 recv=RCS | type=STATE_CHANGE (OUTBOUNDING→OUTBOUND_COMPLETE)
+        HOST->>RCS: sender=HOST_01 recv=RCS | type=STATE_CHANGE (OUTBOUNDING→DONE)
         RCS-->>HOST: sender=RCS recv=HOST_01 | type=ACK
 
         HOST->>RCS: sender=HOST_01 recv=RCS | type=TASK_COMPLETE
         RCS-->>HOST: sender=RCS recv=HOST_01 | type=ACK
 
-        HOST->>RCS: sender=HOST_01 recv=RCS | type=STATE_CHANGE (OUTBOUND_COMPLETE→IDLE)
+        HOST->>RCS: sender=HOST_01 recv=RCS | type=STATE_CHANGE (DONE→IDLE)
         RCS-->>HOST: sender=RCS recv=HOST_01 | type=ACK
     end
 
@@ -457,36 +421,41 @@ sequenceDiagram
 
 ### 6.1 任务状态
 
-| 状态值       | 含义  |
-| --------- | --- |
+| 状态值    | 含义   |
+| --------- | ------ |
 | RECEIVED  | 已接收 |
-| PLANNING  | 规划中 |
 | EXECUTING | 执行中 |
 | PAUSED    | 已暂停 |
 | COMPLETED | 已完成 |
-| FAILED    | 失败  |
+| FAILED    | 失败   |
 
 ### 6.2 工作站状态机
 
 | 状态值               | 含义   |
 | ----------------- | ---- |
-| IDLE              | 空闲   |
-| READY             | 就绪   |
-| OUTBOUNDING       | 出库中  |
-| OUTBOUND_COMPLETE | 出库完成 |
-| FAULT             | 故障   |
+| IDLE              | 空闲，等待任务 |
+| READY             | 就绪，根据任务类型准备执行  |
+| OUTBOUND       | 出库中，夹爪正在抓取货物放到输送线  |
+| DONE              | 出库完成 |
+| ERROR             | 故障   |
+| WAITING_DELIVERY  | 等待放货，ABR已到达准备放货 |
+| DELIVERED        | 放货完成 |
 
-> 正常流转：`IDLE → READY → OUTBOUNDING → OUTBOUND_COMPLETE → IDLE`
+
+> 正常流转：
+>
+> 出库路径`IDLE → READY → OUTBOUND → DONE→ IDLE`
+>
+> 放货路径 `IDLE → READY → WAITING_DELIVERY→ DELIVERRED→ IDLE`
 
 ### 6.3 夹爪状态
 
-| 状态值      | 含义 |
-| -------- | -- |
+| 状态值   | 含义 |
+| -------- | ---- |
 | IDLE     | 空闲 |
 | GRASPING | 抓取 |
-| MOVING   | 移动 |
-| PLACING  | 放料 |
-| FAULT    | 异常 |
+| PLACING  | 放货 |
+| ERROR    | 异常 |
 
 ### 6.4 告警类型
 
