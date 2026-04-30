@@ -150,7 +150,22 @@ class RCSClient:
 
 
 if __name__ == "__main__":
-    rcs_client = RCSClient(port = 100, host = "127.0.0.1", outbound_station_id = "OUTBOUND_001")
+    from datetime import datetime
+    import time
+    rcs_client = RCSClient(host = "127.0.0.1", port = 9000, outbound_station_id = "01")
     rcs_client.connect_to_rcs()
-    rcs_client.send_data(b"Hello RCS")
+    msg = {
+
+        "dask_id": "T202604301452",
+        "task_types":"OUTBOUND",
+        "status": "COMPLETED",
+        "completed_goods": 12,
+        "total_goods": 12,
+        "completed_packages": ["PKG001", "PKG002"],
+        "finish_time": "2026-04-30 14:55:00"
+        
+    }
+    msg = build_message(msg_type = "TASK_COMPLETE", sender = "HOST_01", receiver = "RCS", data = msg)
+    rcs_client.send_data(msg)
+    time.sleep(100)
     rcs_client.close()

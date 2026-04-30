@@ -4,22 +4,23 @@ import threading
 
 from datetime import datetime
 
-
 from src.utils.logger import logger
 
-logger = logger.bind(tag = "visual_gate_simulator")
+logger = logger.bind(tag = "rcs_simulator")
 
 SEPARATOR = b'\n'
 
-class visual_gate_simulator:
+class RCS_Simulator:
     def __init__(self, host, port):
         self.host = host
         self.port = port
+
+        self.connected = False
         self.sock = None
         self.conn = None
-        self.connected = False
+
         self.stop_event = threading.Event()
-        
+
     def connect_station(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -66,12 +67,20 @@ class visual_gate_simulator:
 
     # 处理收到信息
     def handle_message(self, result):
-        msg = self._build_goods_message(task_id = result.get("task_id", ""), result = 0)
+        msg = self._build_goods_message(
+                type = "ACK", 
+                sender = result.get("receiver", ""), 
+                receiver = result.get("sender", ""),
+                data = {"result" : 0, "message" : ""}
+            )
         self.send_data(msg)
 
-        print(result.get("task_id", ""))
-        print(result.get("goods_sequence", None))
-        print(result.get("sendtime", ""))
+        print(result.get("type", ""))
+        print(result.get("sender", ""))
+        print(result.get("receiver", ""))
+        print(result.get("timestamp", ""))
+        print(result.get("data", None))
+        
 
     # 发送数据
     def send_data(self, data) -> None:
@@ -108,18 +117,21 @@ class visual_gate_simulator:
             self.sock = None
         logger.info("模拟器已关闭")
 
-    def _build_goods_message(self, task_id: str, result: int) -> bytes:
+    def _build_goods_message(self, type, sender, receiver, data) -> bytes:
         body = {
-            "task_id": task_id,
-            "result": result,
-            "sendtime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "type": type,
+            "sender": sender,
+            "receiver": receiver,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "data": data
         }
         return self._encode(body)
-
-
-
+    
+    
 
 if __name__ == "__main__":
-    simulator = visual_gate_simulator(host = "127.0.0.1", port = 9000)
-    simulator.connect_station()
-    simulator.close()
+    import time
+    rcs_simulator = RCS_Simulator("127.0.0.1", 9000)
+    rcs_simulator.connect_station()
+    time.sleep(100)
+    rcs_simulator.close()
