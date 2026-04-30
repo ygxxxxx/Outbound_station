@@ -51,7 +51,10 @@ class RCSClient:
             return
         try:
             while True:
-                data = self.sock.recv(4096)  # 接收数据
+                try:
+                    data = self.sock.recv(4096)  # 接收数据
+                except socket.timeout:
+                    continue
                 if not data: 
                     logger.warning(f"RCS关闭连接: {self.host}:{self.port}")
                     self.connected = False
@@ -156,7 +159,7 @@ if __name__ == "__main__":
     rcs_client.connect_to_rcs()
     msg = {
 
-        "dask_id": "T202604301452",
+        "task_id": "T202604301452",
         "task_types":"OUTBOUND",
         "status": "COMPLETED",
         "completed_goods": 12,

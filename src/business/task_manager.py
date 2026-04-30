@@ -159,4 +159,4 @@ class TaskManager:
 
     # 任务下发回调函数，接收从RCS下发的新任务，并添加到待处理队列
     def _on_task_dispatch(self, task: OutboundTask) -> None:
-        self.add_to_pending(QueueTask(task))
+        self.add_to_padding(QueueTask(task))
