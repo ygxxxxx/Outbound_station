@@ -67,13 +67,13 @@ class TaskManager:
         logger.info("任务管理器已停止")
 
     # 添加新任务到待处理队列
-    def add_to_padding(self, task: QueueTask) -> None:
+    def add_to_pending(self, task: QueueTask) -> None:
         with self.rlock:
             self._pending.append(task)
             logger.info(f"新任务加入待处理队列: {task.task_id}")
 
     # 从待处理队列移除任务
-    def _remove_padding(self, task_id: str) -> QueueTask:
+    def _remove_pending(self, task_id: str) -> QueueTask:
         with self.rlock:
             for task in self._pending:
                 if task.task_id == task_id:
@@ -84,12 +84,12 @@ class TaskManager:
             return None
 
     # 获取当前待处理队列中的所有任务
-    def get_padding_tasks(self) -> list[QueueTask]:
+    def get_pending_tasks(self) -> list[QueueTask]:
         with self.rlock:
             return list(self._pending)
 
     # 查找待处理队列中的任务
-    def _find_in_padding(self, task_id: str) -> QueueTask:
+    def _find_in_pending(self, task_id: str) -> QueueTask:
         with self.rlock:
             for task in self._pending:
                 if task.task_id == task_id:
@@ -159,4 +159,4 @@ class TaskManager:
 
     # 任务下发回调函数，接收从RCS下发的新任务，并添加到待处理队列
     def _on_task_dispatch(self, task: OutboundTask) -> None:
-        self.add_to_padding(QueueTask(task))
+        self.add_to_pending(QueueTask(task))

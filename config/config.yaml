@@ -29,3 +29,8 @@ scanner:
 # 异常处理配置
 exception:
     max_retry_count: 3          # 最大重试次数
+
+# 视觉门配置
+visiongate:
+    vg_address: ""
+    vg_port:

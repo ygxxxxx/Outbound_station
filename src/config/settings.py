@@ -43,6 +43,10 @@ class ScannerConfig:
 class ExceptionConfig:
     max_retry_count: int = 3
 
+@dataclass
+class VisionGateConfig:
+    vg_address: str = "0.0.0.0"
+    vg_port: int = 9000
 
 @dataclass
 class Config:
@@ -52,6 +56,7 @@ class Config:
     conveyorconfig: ConveyorConfig = field(default_factory=ConveyorConfig)
     scannerconfig: ScannerConfig = field(default_factory=ScannerConfig)
     exceptionconfig: ExceptionConfig = field(default_factory=ExceptionConfig)
+    visiongateconfig: VisionGateConfig = field(default_factory=VisionGateConfig)
 
 
 # 加载config文件
@@ -69,6 +74,7 @@ def load_config(path="config/config.yaml"):
         conveyor_data = data.get("conveyor", {})
         scanner_data = data.get("scanner", {})
         exception_data = data.get("exception", {})
+        visiongate_data = data.get("visiongate", {})
 
         logger.info("config文件导入成功")
 
@@ -111,6 +117,14 @@ def load_config(path="config/config.yaml"):
                     "max_retry_count", ExceptionConfig.max_retry_count
                 ),
             ),
+            visiongateconfig=VisionGateConfig(
+                vg_address=visiongate_data.get(
+                    "vg_address", VisionGateConfig.vg_address
+                ),
+                vg_port=VisionGateConfig.get(
+                    "vg_port", VisionGateConfig.vg_port
+                )
+            )
         )
     except Exception as e:
         logger.error(f"加载config文件失败: {e}")

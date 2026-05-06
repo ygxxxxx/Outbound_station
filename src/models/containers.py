@@ -114,5 +114,5 @@ class CabinetStore:
 
 if __name__ == "__main__":
     cabint = CabinetStore.create_from_config(station_count = 3, cabinet_layers = 4, stacks_per_layer = 4)
-    print(cabint.get_all())
-    print(cabint.find_by_station(2))
+    # print(cabint.get_all())
+    print(cabint.find_by_station(3))
