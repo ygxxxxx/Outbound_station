@@ -33,6 +33,20 @@ class PLCCommunicationError(CommunicationError):
 class RCSCommunicationError(CommunicationError):
     pass
 
+# 协议版本错误
+@dataclass
+class ProtocolVersionError(RCSCommunicationError):
+    seq: int = 0
+    cmd: int = 0
+    remaining: bytes = b''
+
+# 数据解析错误
+@dataclass
+class ProtocolDataError(RCSCommunicationError):
+    seq: int = 0
+    cmd: int = 0
+    remaining: bytes = b''
+
 # 视觉门通信异常
 @dataclass
 class VisionGateCommunicationError(CommunicationError):
