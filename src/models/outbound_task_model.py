@@ -2,35 +2,33 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 
+# goods货物数据object
 @dataclass
-class Goods:
-    """货物信息"""
-    goods_id: str  # 货物SKU编码
-    count: int     # 数量
+class Put_Goods:
+    storage_location: str # 库位id
+    abr_count: int # 库位货物数量
+    good_sku: List[str] = field(default_factory = list) # 库位上货物SKU
 
 
+# 包裹数据object
 @dataclass
 class Package:
-    """出库包裹信息"""
     package_id: str                      # 包裹ID
+    box_type: str                        # 纸箱类型
     face_sheet: Optional[str] = None     # 面单信息
     logistics: Optional[str] = None       # 物流类型
-    manual_process_type: Optional[str] = None  # 人工处理类型（无/赠品/软包）
-    packaging_line: Optional[str] = None  # 目标包装线（高速线1/高速线2/多盒包装线/人工处理线/合单缓存线）
-    goods: List[Goods] = field(default_factory = list)  # 货物列表
+    manual_process_type: Optional[str] = None  # 人工处理类型
+    packaging_line: Optional[str] = None  # 打包线
+    count: int                            # 包裹中货物数量
+    goods: List[str] = field(default_factory = list)  # 货物信息
 
 
-@dataclass
-class Container:
-    """出库工作站收纳柜货位上的货物数据"""
-    location_id: str  # 货位ID
-    goods_id: str     # 货物SKU编码
-    count: int        # 数量
-
-
+# 任务数据模型
 @dataclass
 class OutboundTask:
-    """出库任务接口根数据模型"""
-    task_id: str                      # 任务流水号
-    packages: List[Package] = field(default_factory = list)   # 出库包裹数据列表
-    containers: List[Container] = field(default_factory = list)  # 出库工作站收纳柜货位数据
+    task_id: str                      # 任务id
+    task_types: str                   # 任务类型
+    timestamp: str                    # 时间戳
+    
+    packages: List[Package] = field(default_factory = list)   # 包裹信息
+    put_goods: List[Put_Goods] = field(default_factory = list) # ABR放货后工作站内的库位信息

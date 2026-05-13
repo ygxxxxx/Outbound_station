@@ -8,7 +8,7 @@ import threading
 
 logger = logger.bind(tag = "PLCClient")
 
-class PLCClient:
+class PLC_Client:
 
     def __init__(self, host, port, slave_id = 1, timeout = 5):
         self.host = host

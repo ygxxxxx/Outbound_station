@@ -3,9 +3,9 @@ from typing import Callable, Optional
 import threading
 from datetime import datetime
 
-from src.communication.rcs_client import RCSClient
-from src.communication.plc_client import PLCClient
-from src.communication.rcs_protocol import build_message
+from src.communication.rcs_sever import RCS_Sever
+from src.communication.plc_client import PLC_Client
+
 from src.utils.logger import logger
 
 logger = logger.bind(tag="StateMachine")
@@ -48,15 +48,13 @@ class StateMachine:
         self,
         host_id: str,
         station_ids: list[int],
-        plc_client: PLCClient,
-        rcs_client: RCSClient,
+        plc_client: PLC_Client,
         on_transition: Optional[TransitionCallback] = None,
     ):
 
         self._host_id = host_id
         self._station_ids = station_ids
         self._plc_client = plc_client
-        self._rcs_client = rcs_client
         self._on_transition = on_transition
 
         self._states: dict[int, StationState] = {
@@ -99,7 +97,6 @@ class StateMachine:
         with self._lock:
             current = self._states[station_id]
             return target in _TRANSITION_TABLE.get(current, set())
-
 
 
     def transition(
@@ -160,21 +157,6 @@ class StateMachine:
 
         return True
 
-    # 返回trigger（可能可以不需要）
-    def _derive_trigger(self, reason: str, old: StationState, new: StationState) -> str:
-
-        r = reason.lower()
-        if any(k in r for k in ("急停", "故障", "异常", "err")):
-            return Trigger.ALARM
-        if any(k in r for k in ("人工", "恢复", "重置", "reset")):
-            return Trigger.RESET
-        if old == StationState.IDLE and new == StationState.READY:
-            return Trigger.TASK_ASSIGNED
-        if new == StationState.DONE:
-            return Trigger.ALL_ACTIONS_DONE
-        if new == StationState.IDLE:
-            return Trigger.ALL_ACTIONS_DONE
-        return Trigger.ACTION_START
 
     # 强制重置状态到IDLE
     def force_reset_to_idle(self, station_id: int) -> None:
@@ -278,148 +260,6 @@ class StateMachine:
                 logger.debug(
                     f"[{self._host_id}] S{station_id} 空位更新: {empty_slots}"
                 )
-
-    def _sender(self) -> str:
-        return self._host_id
-
-    # 上报状态变更
-    def _send_state_change(
-        self, station_id: int, old: StationState, new: StationState, trigger: str
-    ) -> None:
-        ctx = self._contexts.get(station_id, {})
-        try:
-            msg = build_message("STATE_CHANGE", self._sender(), "RCS", {
-                "station_id": station_id,
-                "task_id": ctx.get("task_id", ""),
-                "previous_state": old.value,
-                "current_state": new.value,
-                "trigger": trigger,
-            })
-            self._rcs_client.send_data(msg)
-            logger.debug(
-                f"[{self._host_id}] S{station_id} STATE_CHANGE: {old.value} -> {new.value}"
-            )
-        except Exception as e:
-            logger.error(f"[{self._host_id}] S{station_id} STATE_CHANGE 失败: {e}")
-
-    # 发送任务完成通知
-    def _send_task_complete(self, station_id: int) -> None:
-        ctx = self._contexts.get(station_id, {})
-        try:
-            msg = build_message("TASK_COMPLETE", self._sender(), "RCS", {
-                "task_id": ctx.get("task_id", ""),
-                "task_types": ctx.get("task_type", "OUTBOUND"),
-                "status": "COMPLETED",
-                "completed_goods": self._get_completed_goods_count(station_id),
-                "total_goods": ctx.get("total_goods", 0),
-                "completed_packages": self._get_completed_package_ids(station_id),
-                "finish_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            })
-            self._rcs_client.send_data(msg)
-            logger.info(
-                f"[{self._host_id}] S{station_id} TASK_COMPLETE task={ctx.get('task_id')}"
-            )
-        except Exception as e:
-            logger.error(f"[{self._host_id}] S{station_id} TASK_COMPLETE 失败: {e}")
-
-    # 发送任务执行进度
-    def send_task_progress(self, station_id: int) -> None:
-        ctx = self._contexts.get(station_id, {})
-        try:
-            msg = build_message("TASK_PROGRESS", self._sender(), "RCS", {
-                "task_id": ctx.get("task_id", ""),
-                "status": "EXECUTING",
-                "completed_goods": self._get_completed_goods_count(station_id),
-                "total_goods": ctx.get("total_goods", 0),
-                "completed_packages": self._get_completed_package_ids(station_id),
-            })
-            self._rcs_client.send_data(msg)
-            logger.debug(f"[{self._host_id}] S{station_id} TASK_PROGRESS")
-        except Exception as e:
-            logger.error(f"[{self._host_id}] S{station_id} TASK_PROGRESS 失败: {e}")
-
-    # 发送货位数据
-    def _send_container(self, station_id: int) -> None:
-
-        try:
-            containers = self._get_cabinet_slot_data(station_id)
-            occupied = sum(1 for s in containers if s.get("status") == "OCCUPIED")
-            empty = len(self._empty_slots.get(station_id, []))
-            total = occupied + empty
-
-            msg = build_message("CONTAINER", self._sender(), "RCS", {
-                "station_id": station_id,
-                "containers": containers,
-                "total_slots": total,
-                "occupied_slots": occupied,
-                "empty_slots": empty,
-            })
-            self._rcs_client.send_data(msg)
-            logger.info(
-                f"[{self._host_id}] S{station_id} CONTAINER: 占用{occupied}/空闲{empty}/{total}"
-            )
-        except Exception as e:
-            logger.error(f"[{self._host_id}] S{station_id} CONTAINER 失败: {e}")
-
-    # 上报警告
-    def report_error(
-        self,
-        station_id: int,
-        alarm_type: str,
-        description: str,
-        level: str = "ERROR",
-        device: str = "",
-    ) -> None:
-        
-        ctx = self._contexts.get(station_id, {})
-        try:
-            msg = build_message("ALARM", self._sender(), "RCS", {
-                "alarm_id": f"ALM{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "level": level,
-                "device": device or f"工作站{station_id}",
-                "alarm_type": alarm_type,
-                "task_id": ctx.get("task_id", ""),
-                "station_id": station_id,
-            })
-            self._rcs_client.send_data(msg)
-            logger.warning(
-                f"[{self._host_id}] S{station_id} ALARM: {alarm_type} - {description}"
-            )
-        except Exception as e:
-            logger.error(f"[{self._host_id}] S{station_id} ALARM 失败: {e}")
-
-    # 上报设备状态（不确定需不需要，并且需要获取状态函数还没写）
-    def _send_device_status(self) -> None:
-        
-        stations = []
-        for sid in self._station_ids:
-            stations.append({
-                "station_id": sid,
-                "grippers": [
-                    {"gripper_id": 1, "status": "IDLE"},
-                    {"gripper_id": 2, "status": "IDLE"},
-                ],
-                "conveyor": "RUNNING",
-                "scanner_online": True,
-            })
-        try:
-            msg = build_message("DEVICE_STATUS", self._sender(), "RCS", {
-                "stations": stations,
-            })
-            self._rcs_client.send_data(msg)
-            logger.debug(f"[{self._host_id}] DEVICE_STATUS")
-        except Exception as e:
-            logger.error(f"[{self._host_id}] DEVICE_STATUS 失败: {e}")
-
-
-    # 定时上报所有工作站状态+收纳柜+设备状态
-    def report_all_status(self) -> None:
-        for sid in self._station_ids:
-            with self._lock:
-                current = self._states[sid]
-            self._send_state_change(sid, current, current, Trigger.ACTION_START)
-            self._send_container(sid)
-        self._send_device_status()
 
     def mark_package_complete(self, station_id: int, package_id: str) -> None:
         with self._lock:
