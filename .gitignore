@@ -31,7 +31,7 @@ docs/*
 !docs/出库工作站上位机-RCS通信协议*.pdf
 !docs/出库工作站上位机-视觉门通信协议*.pdf
 !docs/玩觅出入库分拣系统上位机-RCS通信协议V1.0B(杨文成 20260509)*.xlsx
-
+!docs/玩觅出库工作站modbus通信接口*.xlsx
 
 .qoder/*
 .kilo/*

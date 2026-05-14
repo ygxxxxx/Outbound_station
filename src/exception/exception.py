@@ -115,3 +115,7 @@ class ParameterError(OutboundStationError, ValueError):
 @dataclass
 class PackageInfoError(ParameterError):
     pass
+
+@dataclass
+class RegisterAddressError(ParameterError):
+    pass

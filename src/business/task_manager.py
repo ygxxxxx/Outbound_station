@@ -12,7 +12,9 @@ logger = logger.bind(tag="TaskManager")
 class QueueTask:
     def __init__(self, task: OutboundTask):
         self.task_id = task.task_id
+        self.tesk_types = task.task_types
         self.status = "pending"  
+        self.total_packages = task.packages_count
         self.task = task
         self.start_time = None
         self.end_time = None
@@ -28,27 +30,9 @@ class TaskManager:
         self._pending: deque[QueueTask] = deque()
         self._task: dict[str, QueueTask] = {}
 
-        self._stop_event = threading.Event()
-        self._stop_event.set()
         self.rlock = threading.RLock()
 
         logger.info("任务管理器初始化完成")
-
-    # 启动任务管理器
-    def start(self) -> None:
-        if not self._stop_event.is_set():
-            logger.warning("任务管理器已在运行中,忽略重复启动")
-            return
-        self._stop_event.clear()
-        logger.info("任务管理器已启动")
-
-    # 结束任务管理器
-    def stop(self) -> None:
-        if self._stop_event.is_set():
-            logger.warning("任务管理器未在运行,忽略重复停止")
-            return
-        self._stop_event.set()
-        logger.info("任务管理器已停止")
 
     # 添加新任务到待处理队列
     def add_to_pending(self, task: QueueTask) -> None:
@@ -57,7 +41,7 @@ class TaskManager:
             logger.info(f"新任务加入待处理队列: {task.task_id}")
 
     # 从待处理队列移除任务
-    def _remove_pending(self, task_id: str) -> QueueTask:
+    def remove_pending(self, task_id: str) -> QueueTask:
         with self.rlock:
             for task in self._pending:
                 if task.task_id == task_id:
@@ -68,24 +52,19 @@ class TaskManager:
             return None
 
     # 将任务从待处理队列移动到任务字典中
-    def _add_to_running(self, task: QueueTask) -> None:
+    def add_to_running(self, task: QueueTask) -> None:
         with self.rlock:
-            if len(self._task) >= 2:
-                completed_key = None
-                for key, t in self._task.items():
-                    if t.status == "completed":
-                            completed_key = key
-                            break
-                    if completed_key:
-                        del self._task[completed_key]
             task.status = "executing"
             task.start_time = str(int(time.time() * 1000))
             self._task[task.task_id] = task
-            logger.debug(f"任务移入执行字典 taskid = {task.task_id}")
+            logger.debug(f"任务开始执行 taskid = {task.task_id}")
 
     # 任务完成状态切换，将已经完成的任务切换状态
-    def _complete_task(self) -> None:
+    def complete_task(self) -> None:
         with self.rlock:
+            completed_keys = [key for key, t in self._task.items() if t.status == "completed"]
+            for key in completed_keys:
+                del self._task[key]
             for key, t in self._task.items():
                 if t.status == "executing":
                     t.status = "completed"
