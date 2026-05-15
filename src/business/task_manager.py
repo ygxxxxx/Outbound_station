@@ -55,7 +55,7 @@ class TaskManager:
     def add_to_running(self, task: QueueTask) -> None:
         with self.rlock:
             task.status = "executing"
-            task.start_time = str(int(time.time() * 1000))
+            task.start_time = (int(time.time() * 1000))
             self._task[task.task_id] = task
             logger.debug(f"任务开始执行 taskid = {task.task_id}")
 
@@ -68,7 +68,7 @@ class TaskManager:
             for key, t in self._task.items():
                 if t.status == "executing":
                     t.status = "completed"
-                    t.end_time = str(int(time.time() * 1000))
+                    t.end_time = (int(time.time() * 1000))
 
     # 查询任务执行状态
     def get_current_task_detail(self) -> dict:

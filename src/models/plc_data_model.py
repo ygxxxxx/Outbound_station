@@ -9,10 +9,6 @@ from threading import RLock
 class GripperState:
 
     is_running: bool = False # True=夹爪运行中, False=夹爪空闲
-    target_layer: int = 0 # 上位机下发的目标抓取层（1~4），仅记录，不是 PLC 反馈
-    target_count: int = 0 # 上位机下发的目标数量
-    target_size: int = 0 # 上位机下发的目标尺寸
-
 
 # 单层库位状态
 @dataclass
@@ -181,16 +177,16 @@ class PLCStatusData:
             return
         for sid in range(1, 4):
             idx0 = base + (sid - 1) * 4 + 0
-            self._stations[sid].fault.left_lift_fault = registers[idx0]
+            self._stations[sid].fault.left_stretch_fault = registers[idx0]
 
             idx1 = base + (sid - 1) * 4 + 1
             self._stations[sid].fault.left_lift_fault = registers[idx1]
             
             idx2 = base + (sid - 1) * 4 + 2
-            self._stations[sid].fault.left_lift_fault = registers[idx2]
+            self._stations[sid].fault.right_stretch_fault = registers[idx2]
             
             idx3= base + (sid - 1) * 4 + 3
-            self._stations[sid].fault.left_lift_fault = registers[idx3]
+            self._stations[sid].fault.right_lift_fault = registers[idx3]
 
     # 解析是否触发急停
     def _parse_emergency_stop(self, registers: List[int], start_address: int) -> None:
@@ -214,24 +210,14 @@ class PLCStatusData:
         with self._lock:
             if 1 <= gripper_id <= 6:
                 g = self._grippers[gripper_id - 1]
-                return GripperState(
-                    is_running=g.is_running,
-                    target_layer=g.target_layer,
-                    target_count=g.target_count,
-                    target_size=g.target_size,
-                )
+                return GripperState(is_running=g.is_running)
             return None
 
     # 获得全部夹爪状态
     def get_all_gripper_states(self) -> List[GripperState]:
         with self._lock:
             return [
-                GripperState(
-                    is_running=g.is_running,
-                    target_layer=g.target_layer,
-                    target_count=g.target_count,
-                    target_size=g.target_size,
-                )
+                GripperState(is_running=g.is_running)
                 for g in self._grippers
             ]
 
@@ -291,7 +277,7 @@ class PLCStatusData:
             return self._emergency_stop
 
     # 获得夹爪是否在运行中
-    def is_gripper_idle(self, gripper_id: int) -> bool:
+    def is_gripper_running(self, gripper_id: int) -> bool:
         with self._lock:
             if 1 <= gripper_id <= 6:
                 return self._grippers[gripper_id - 1].is_running

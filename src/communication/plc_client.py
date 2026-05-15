@@ -10,7 +10,7 @@ logger = logger.bind(tag = "PLCClient")
 
 class PLC_Client:
 
-    def __init__(self, host, port, slave_id = 1, timeout = 5):
+    def __init__(self, host, port, slave_id=1, timeout=5):
         self.host = host
         self.port = port
 
@@ -20,7 +20,7 @@ class PLC_Client:
 
         self.timeout = timeout
 
-        self._client = ModbusTcpClient(host = self.host, port = self.port, timeout = self.timeout, retries = 3)
+        self._client = ModbusTcpClient(host=self.host, port=self.port, timeout=self.timeout, retries=3)
 
         self._stop_event = threading.Event()
 
@@ -72,12 +72,12 @@ class PLC_Client:
             logger.info(f"PLC连接已关闭: {self.host}:{self.port}")
 
     # 读取多个保持寄存器
-    def read_holding_registers(self, address, count, slave = None) -> list:
+    def read_holding_registers(self, address, count, slave=None) -> list:
         _slave = slave if slave is not None else self.slave_id
         with self._lock:
             self._ensure_connection()
             try:
-                result = self._client.read_holding_registers(address, count, _slave)
+                result = self._client.read_holding_registers(address, count=count, device_id=_slave)
                 if result.isError():
                     logger.error(f"读取保持寄存器失败: {result}")
                     raise PLCCommunicationError(
@@ -93,12 +93,12 @@ class PLC_Client:
                 )
             
     # 写入多个保持寄存器
-    def write_holding_registers(self, address, values, slave = None) -> bool:
+    def write_holding_registers(self, address, values, slave=None) -> bool:
         _slave = slave if slave is not None else self.slave_id
         with self._lock:
             self._ensure_connection()
             try:
-                result = self._client.write_registers(address, values, _slave)
+                result = self._client.write_registers(address, values, device_id=_slave)
                 if result.isError():
                     logger.error(f"写入保持寄存器失败: {result}")
                     raise PLCCommunicationError(
@@ -114,12 +114,12 @@ class PLC_Client:
                 )
 
     # 读取多个输入寄存器
-    def read_input_registers(self, address, count, slave = None) -> list:
+    def read_input_registers(self, address, count, slave=None) -> list:
         _slave = slave if slave is not None else self.slave_id
         with self._lock:
             self._ensure_connection()
             try:
-                result = self._client.read_input_registers(address, count, _slave)
+                result = self._client.read_input_registers(address, count=count, device_id=_slave)
                 if result.isError():
                     logger.error(f"读取输入寄存器失败: {result}")
                     raise PLCCommunicationError(
@@ -135,12 +135,12 @@ class PLC_Client:
                 )
     
     # 读取多个线圈状态
-    def read_coils(self, address, count, slave = None) -> list:
+    def read_coils(self, address, count, slave=None) -> list:
         _slave = slave if slave is not None else self.slave_id
         with self._lock:
             self._ensure_connection()
             try:
-                result = self._client.read_coils(address, count, _slave)
+                result = self._client.read_coils(address, count=count, device_id=_slave)
                 if result.isError():
                     logger.error(f"读取线圈失败: {result}")
                     raise PLCCommunicationError(
@@ -156,12 +156,12 @@ class PLC_Client:
                 )
     
     # 写入单个线圈状态
-    def write_coil(self, address, value, slave = None) -> bool:
+    def write_coil(self, address, value, slave=None) -> bool:
         _slave = slave if slave is not None else self.slave_id
         with self._lock:
             self._ensure_connection()
             try:
-                result = self._client.write_coil(address, value, _slave)
+                result = self._client.write_coil(address, value, device_id=_slave)
                 if result.isError():
                     logger.error(f"写入线圈失败: {result}")
                     raise PLCCommunicationError(
@@ -177,12 +177,12 @@ class PLC_Client:
                 )
 
     # 写入多个线圈状态
-    def write_coils(self, address, values, slave = None) -> bool:
+    def write_coils(self, address, values, slave=None) -> bool:
         _slave = slave if slave is not None else self.slave_id
         with self._lock:
             self._ensure_connection()
             try:
-                result = self._client.write_coils(address, values, _slave)
+                result = self._client.write_coils(address, values, device_id=_slave)
                 if result.isError():
                     logger.error(f"写入线圈失败: {result}")
                     raise PLCCommunicationError(
@@ -198,12 +198,12 @@ class PLC_Client:
                 )
     
     # 读取多个离散输入状态
-    def read_discrete_inputs(self, address, count, slave = None) -> list:
+    def read_discrete_inputs(self, address, count, slave=None) -> list:
         _slave = slave if slave is not None else self.slave_id
         with self._lock:
             self._ensure_connection()
             try:
-                result = self._client.read_discrete_inputs(address, count, _slave)
+                result = self._client.read_discrete_inputs(address, count=count, device_id=_slave)
                 if result.isError():
                     logger.error(f"读取离散输入失败: {result}")
                     raise PLCCommunicationError(
@@ -249,40 +249,25 @@ class PLC_Client:
         while not self._stop_event.is_set():
             data = {}
             try:
-                self._ensure_connection()
                 for name, config in self._address_map.items():
                     addr_type = config["type"]
                     address = config["address"]
                     count = config.get("count", 1)
 
                     if addr_type == "holding":
-                        result = self._client.read_holding_registers(
-                            address=address, count=count, slave=self.slave_id
-                        )
-                        if not result.isError():
-                            data[name] = result.registers
+                        data[name] = self.read_holding_registers(address, count)
                     elif addr_type == "coils":
-                        result = self._client.read_coils(
-                            address=address, count=count, slave=self.slave_id
-                        )
-                        if not result.isError():
-                            data[name] = result.bits[:count]
+                        data[name] = self.read_coils(address, count)
                     elif addr_type == "input":
-                        result = self._client.read_input_registers(
-                            address=address, count=count, slave=self.slave_id
-                        )
-                        if not result.isError():
-                            data[name] = result.registers
+                        data[name] = self.read_input_registers(address, count)
                     elif addr_type == "discrete":
-                        result = self._client.read_discrete_inputs(
-                            address=address, count=count, slave=self.slave_id
-                        )
-                        if not result.isError():
-                            data[name] = result.bits[:count]
+                        data[name] = self.read_discrete_inputs(address, count)
                 if data and self._poll_callback:
                     self._poll_callback(data)
-                
+
+            except PLCCommunicationError as e:
+                logger.error(f"PLC轮询通信异常: {e}")
             except Exception as e:
                 logger.error(f"PLC轮询异常: {e}")
-                
+
             self._stop_event.wait(self._poll_interval)

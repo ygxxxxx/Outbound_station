@@ -119,12 +119,12 @@ class RCS_Sever:
                         result, recv_buffer = decode(recv_buffer)
                     except ProtocolVersionError as e:
                         recv_buffer = e.remaining
-                        error_resp = encode(e.seq, e.cmd + 10000, {"ret_code": -1, "create_time": str(int(time.time() * 1000)), "err_msg": str(e)})
+                        error_resp = encode(e.seq, e.cmd + 10000, {"ret_code": -1, "create_time": (int(time.time() * 1000)), "err_msg": str(e)})
                         conn.sendall(error_resp)
                         break
                     except  ProtocolDataError as e:
                         recv_buffer = e.remaining
-                        error_resp = encode(e.seq, e.cmd + 10000, {"ret_code": -1, "create_time": str(int(time.time() * 1000)), "err_msg": str(e)})
+                        error_resp = encode(e.seq, e.cmd + 10000, {"ret_code": -1, "create_time": (int(time.time() * 1000)), "err_msg": str(e)})
                         conn.sendall(error_resp)
                         break
                     if result is None:
@@ -199,7 +199,7 @@ if __name__ == '__main__':
     def build_common_response(business_data: dict = None, ret_code: int = 0, err_msg: str = "") -> dict:
         response = {
             "ret_code": ret_code,
-            "create_time": str(int(time.time() * 1000)),
+            "create_time": (int(time.time() * 1000)),
             "err_msg": err_msg,
         }
         if business_data:

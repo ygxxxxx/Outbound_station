@@ -38,7 +38,7 @@ def parse_outbound_task(body_dict: dict) -> OutboundTask:
     return OutboundTask(
         task_id=body_dict["task_id"],
         task_types=body_dict["task_types"],
-        timestamp=body_dict.get("timestamp", str(int(time.time() * 1000))),
+        timestamp=body_dict.get("timestamp", (int(time.time() * 1000))),
         packages=packages,
         put_goods=put_goods,
     )

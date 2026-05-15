@@ -1,5 +1,6 @@
 from src.utils.logger import logger
-from src.exception.exception import RegisterAddressError
+from src.exception.exception import ParameterError
+
 logger = logger.bind(tag = "plc_registers")
 
 
@@ -16,8 +17,8 @@ class GripperAddr:
     GRIPPER_1_SIZE = 2  # 货物尺寸
 
     GRIPPER_2_POS = 3
-    GIRPPER_2_COUNT = 4
-    GIRPPER_2_SIZE = 5
+    GRIPPER_2_COUNT = 4
+    GRIPPER_2_SIZE = 5
 
     GRIPPER_3_POS = 6
     GRIPPER_3_COUNT = 7
@@ -28,14 +29,14 @@ class GripperAddr:
     GRIPPER_4_SIZE = 11
 
     GRIPPER_5_POS = 12
-    GIRPPER_5_COUNT = 13
-    GIRPPER_5_SIZE = 14
+    GRIPPER_5_COUNT = 13
+    GRIPPER_5_SIZE = 14
 
     GRIPPER_6_POS = 15
     GRIPPER_6_COUNT = 16
     GRIPPER_6_SIZE = 17
 
-     # 通过夹爪编号（1~6）获取该夹爪的抓取位置寄存器地址
+    # 通过夹爪编号（1~6）获取该夹爪的抓取位置寄存器地址
     @classmethod
     def pos_addr(cls, gripper_id: int) -> int:
         cls._validate_gripper_id(gripper_id)
@@ -56,7 +57,7 @@ class GripperAddr:
     @classmethod
     def _validate_gripper_id(cls, gripper_id: int):
         if not 1 <= gripper_id <= cls.GRIPPER_COUNT:
-            raise ValueError(f"夹爪编号必须在 1~{cls.GRIPPER_COUNT} 之间, 实际: {gripper_id}")
+            raise ParameterError(message=f"夹爪编号超出范围", expected_value=f"1~{cls.GRIPPER_COUNT}", actual_value=str(gripper_id))
 
 
 # 库位传送带寄存器
@@ -73,17 +74,17 @@ class CabinetCtrlAddr:
     WSA_L3_FWD = 21         # 3层传送带转动
     WSA_L4_FWD = 22         # 4层传送带转动
 
-    WSB_PLACE = 18          # 工作站B库位传送带集体转动
-    WSB_L1_FWD = 19         # 1层传送带转动
-    WSB_L2_FWD = 20         # 2层传送带转动
-    WSB_L3_FWD = 21         # 3层传送带转动
-    WSB_L4_FWD = 22         # 4层传送带转动
+    WSB_PLACE = 23          # 工作站B库位传送带集体转动
+    WSB_L1_FWD = 24         # 1层传送带转动
+    WSB_L2_FWD = 25         # 2层传送带转动
+    WSB_L3_FWD = 26         # 3层传送带转动
+    WSB_L4_FWD = 27         # 4层传送带转动
 
-    WSC_PLACE = 18          # 工作站C库位传送带集体转动
-    WSC_L1_FWD = 19         # 1层传送带转动
-    WSC_L2_FWD = 20         # 2层传送带转动
-    WSC_L3_FWD = 21         # 3层传送带转动
-    WSC_L4_FWD = 22         # 4层传送带转动
+    WSC_PLACE = 28         # 工作站C库位传送带集体转动
+    WSC_L1_FWD = 29         # 1层传送带转动
+    WSC_L2_FWD = 30         # 2层传送带转动
+    WSC_L3_FWD = 31         # 3层传送带转动
+    WSC_L4_FWD = 32         # 4层传送带转动
 
     # 通过工作站编号获取库位集体转动地址
     @classmethod
@@ -96,13 +97,13 @@ class CabinetCtrlAddr:
     def forward_addr(cls, station_id: int, layer: int) -> int:
         cls._validate_station_id(station_id)
         if not 1 <= layer <= 4:
-            raise ValueError(f"层号必须在 1~4 之间, 实际: {layer}")
+            raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
         return 18 + (station_id - 1) * cls.REGISTERS_PER_STATION + layer
 
     @classmethod
     def _validate_station_id(cls, station_id: int):
         if not 1 <= station_id <= cls.STATION_COUNT:
-            raise ValueError(f"工作站编号必须在 1~{cls.STATION_COUNT} 之间, 实际: {station_id}")
+            raise ParameterError(message=f"工作站编号超出范围", expected_value=f"1~{cls.STATION_COUNT}", actual_value=str(station_id))
 
 
 # 状态寄存器
@@ -122,7 +123,7 @@ class StatusAddr:
     @classmethod
     def gripper_status_addr(cls, gripper_id: int) -> int:
         if not 1 <= gripper_id <= 6:
-            raise ValueError(f"夹爪编号必须在 1~6 之间, 实际: {gripper_id}")
+            raise ParameterError(message="夹爪编号超出范围", expected_value="1~6", actual_value=str(gripper_id))
         return 99 + gripper_id
 
     WSA_CB1_S = 106 # 工作站A库位传送带状态， 1传送带运行中，0传送带停止
@@ -145,9 +146,9 @@ class StatusAddr:
     @classmethod
     def conveyor_status_addr(cls, station_id: int, layer: int) -> int:
         if not 1 <= station_id <= 3:
-            raise ValueError(f"工作站编号必须在 1~3 之间, 实际: {station_id}")
+            raise ParameterError(message="工作站编号超出范围", expected_value="1~3", actual_value=str(station_id))
         if not 1 <= layer <= 4:
-            raise ValueError(f"层号必须在 1~4 之间, 实际: {layer}")
+            raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
         return 105 + (station_id - 1) * 4 + layer
 
     WSA_1F_PS_S = 118 # 工作站A1层前光电传感器状态，1光电触发，0未触发
@@ -183,11 +184,11 @@ class StatusAddr:
     def photo_addr(cls, station_id: int, layer: int, position: str) -> int:
 
         if not 1 <= station_id <= 3:
-            raise ValueError(f"工作站编号必须在 1~3 之间, 实际: {station_id}")
+            raise ParameterError(message="工作站编号超出范围", expected_value="1~3", actual_value=str(station_id))
         if not 1 <= layer <= 4:
-            raise ValueError(f"层号必须在 1~4 之间, 实际: {layer}")
+            raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
         if position not in ("front", "back"):
-            raise ValueError(f"光电位置必须是 'front' 或 'back', 实际: {position}")
+            raise ParameterError(message="光电位置参数错误", expected_value="front 或 back", actual_value=str(position))
 
         index = (station_id - 1) * 8 + (layer - 1) * 2
         if position == "back":
@@ -198,27 +199,29 @@ class StatusAddr:
     WSA_LLF_E = 143 # 工作站A左夹爪升降故障，0为无故障，大于0则轴故障，读取到的数值为故障码
     WSA_RSF_E = 144 # 工作站A右夹爪伸缩故障，0为无故障，大于0则轴故障，读取到的数值为故障码
     WSA_RLF_E = 145 # 工作站A右夹爪升降故障，0为无故障，大于0则轴故障，读取到的数值为故障码
-    WSB_LSF_E = 142 # 工作站B左夹爪伸缩故障，0为无故障，大于0则轴故障，读取到的数值为故障码
-    WSB_LLF_E = 143 # 工作站B左夹爪升降故障，0为无故障，大于0则轴故障，读取到的数值为故障码
-    WSB_RSF_E = 144 # 工作站B右夹爪伸缩故障，0为无故障，大于0则轴故障，读取到的数值为故障码
-    WSB_RLF_E = 145 # 工作站B右夹爪升降故障，0为无故障，大于0则轴故障，读取到的数值为故障码
-    WSC_LSF_E = 142 # 工作站C左夹爪伸缩故障，0为无故障，大于0则轴故障，读取到的数值为故障码
-    WSC_LLF_E = 143 # 工作站C左夹爪升降故障，0为无故障，大于0则轴故障，读取到的数值为故障码
-    WSC_RSF_E = 144 # 工作站C右夹爪伸缩故障，0为无故障，大于0则轴故障，读取到的数值为故障码
-    WSC_RLF_E = 145 # 工作站C右夹爪升降故障，0为无故障，大于0则轴故障，读取到的数值为故障码
+    WSB_LSF_E = 146 # 工作站B左夹爪伸缩故障，0为无故障，大于0则轴故障，读取到的数值为故障码
+    WSB_LLF_E = 147 # 工作站B左夹爪升降故障，0为无故障，大于0则轴故障，读取到的数值为故障码
+    WSB_RSF_E = 148 # 工作站B右夹爪伸缩故障，0为无故障，大于0则轴故障，读取到的数值为故障码
+    WSB_RLF_E = 149 # 工作站B右夹爪升降故障，0为无故障，大于0则轴故障，读取到的数值为故障码
+    WSC_LSF_E = 150 # 工作站C左夹爪伸缩故障，0为无故障，大于0则轴故障，读取到的数值为故障码
+    WSC_LLF_E = 151 # 工作站C左夹爪升降故障，0为无故障，大于0则轴故障，读取到的数值为故障码
+    WSC_RSF_E = 152 # 工作站C右夹爪伸缩故障，0为无故障，大于0则轴故障，读取到的数值为故障码
+    WSC_RLF_E = 153 # 工作站C右夹爪升降故障，0为无故障，大于0则轴故障，读取到的数值为故障码
     
     FAULT_START = 142 # 夹爪轴故障寄存器起始地址
     FAULT_COUNT = 12  # 夹爪轴故障寄存器数量
 
-    # 获取夹爪周故障寄存器起始地址
+    AXLE_NAMES = ("left_stretch", "left_lift", "right_stretch", "right_lift")
+
+    # 获取夹爪轴故障寄存器起始地址
     @classmethod
     def fault_addr(cls, station_id: int, axle: str) -> int:
         if not 1 <= station_id <= 3:
-            raise ValueError(f"工作站编号必须在 1~3 之间, 实际: {station_id}")
+            raise ParameterError(message="工作站编号超出范围", expected_value="1~3", actual_value=str(station_id))
         if axle not in cls.AXLE_NAMES:
-            raise ValueError(f"轴名称必须是 {cls.AXLE_NAMES} 之一, 实际: {axle}")
+            raise ParameterError(message="轴名称参数错误", expected_value=str(cls.AXLE_NAMES), actual_value=str(axle))
         axle_index = cls.AXLE_NAMES.index(axle)
-        return 141 + (station_id - 1) * 4 + axle_index
+        return 142 + (station_id - 1) * 4 + axle_index
 
     EMERGENCY_STOP = 154 # 急停报警
 
@@ -226,14 +229,14 @@ class StatusAddr:
     WSA_2TO_E = 156 # 工作站A2层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
     WSA_3TO_E = 157 # 工作站A3层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
     WSA_4TO_E = 158 # 工作站A4层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
-    WSB_1TO_E = 159 # 工作站A1层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
-    WSB_2TO_E = 160 # 工作站A2层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
-    WSB_3TO_E = 161 # 工作站A3层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
-    WSB_4TO_E = 162 # 工作站A4层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
-    WSC_1TO_E = 163 # 工作站A1层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
-    WSC_2TO_E = 164 # 工作站A2层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
-    WSC_3TO_E = 165 # 工作站A3层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
-    WSC_4TO_E = 166 # 工作站A4层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
+    WSB_1TO_E = 159 # 工作站B1层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
+    WSB_2TO_E = 160 # 工作站B2层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
+    WSB_3TO_E = 161 # 工作站B3层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
+    WSB_4TO_E = 162 # 工作站B4层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
+    WSC_1TO_E = 163 # 工作站C1层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
+    WSC_2TO_E = 164 # 工作站C2层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
+    WSC_3TO_E = 165 # 工作站C3层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
+    WSC_4TO_E = 166 # 工作站C4层库位传送带运行时间过久光电未检测到鞋盒，故障恢复后需上位机清0
 
     TIMEOUT_START = 155 # 工作站库位传送带运行状态超时报警寄存器起始地址
     TIMEOUT_COUNT = 12  # 工作站库位传送带运行状态超时报警寄存器数量
@@ -242,9 +245,9 @@ class StatusAddr:
     @classmethod
     def timeout_addr(cls, station_id: int, layer: int) -> int:
         if not 1 <= station_id <= 3:
-            raise ValueError(f"工作站编号必须在 1~3 之间, 实际: {station_id}")
+            raise ParameterError(message="工作站编号超出范围", expected_value="1~3", actual_value=str(station_id))
         if not 1 <= layer <= 4:
-            raise ValueError(f"层号必须在 1~4 之间, 实际: {layer}")
+            raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
         return 154 + (station_id - 1) * 4 + layer
 
 
