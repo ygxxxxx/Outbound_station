@@ -3,7 +3,7 @@ import time
 from typing import Optional, Dict, Callable, List
 
 from pymodbus.server import StartTcpServer
-from pymodbus.datastore import ModbusServerContext, ModbusDeviceContext, ModbusSequentialDataBlock
+from pymodbus.datastore import ModbusServerContext, ModbusSlaveContext, ModbusSequentialDataBlock
 
 from src.communication.plc_registers import GripperAddr, CabinetCtrlAddr, StatusAddr, RegisterRange
 
@@ -17,7 +17,7 @@ class PLC_Simulator:
     TOTAL_REGISTERS = 200 # 寄存器总数
 
     GRIPPER_RUN_TIME = 5.0 # 夹爪运行时间5秒
-    CABINER_PLACE_TIME = 5.0 # 库位传送带运行5秒
+    CABINET_PLACE_TIME = 5.0 # 库位传送带运行5秒
     CABINET_FWD_TIME = 2.0 # 单个库位传送带运行时间
     MONITOR_INTERVAL = 0.2 # 监控线程每0.2秒检查一次寄存器
 
@@ -26,8 +26,8 @@ class PLC_Simulator:
         self.host = host
         self.port = port
 
-        hr_block = ModbusSequentialDataBlock(0, [0] * self.TOTAL_REGISTERS) # 创建200个寄存器，初始值为0，地址从0开始
-        self._slave_context = ModbusDeviceContext(hr = hr_block) # 把寄存器保存到一共从站设别当中
+        hr_block = ModbusSequentialDataBlock(0, [0] * self.TOTAL_REGISTERS) # 创建200个寄存器，初始值为0，地址从1开始
+        self._slave_context = ModbusSlaveContext(hr = hr_block) # 把寄存器保存到一共从站设别当中
         self._context = ModbusServerContext(slaves = self._slave_context, single = True) # 服务器上下文，管理所有设备，single = true表示只有一台PLC
         self._stop_event = threading.Event()
 
@@ -35,7 +35,7 @@ class PLC_Simulator:
         self._server_thread: Optional[threading.Thread] = None
 
         self._active_simulations: Dict[str, bool] = {}
-        self._sim_lock = threading.lock
+        self._sim_lock = threading.Lock()
 
     # 启动
     def start(self) -> None:
@@ -60,12 +60,12 @@ class PLC_Simulator:
     def _run_server(self) -> None:
         try:
             # 上下文，监听端口
-            StartTcpServer(context = self._context, address = (self.host, self.post))
+            StartTcpServer(context = self._context, address = (self.host, self.port))
         except Exception as e:
             logger.error(f"Modbus server 异常： {e}")
 
     # 读单个寄存器
-    def _read_rag(self, address: int) -> int:
+    def _read_reg(self, address: int) -> int:
         return self._slave_context.getValues(3, address, count = 1)[0]
 
     # 读多个寄存器
@@ -87,7 +87,7 @@ class PLC_Simulator:
                 self._check_gripper_commands()
                 self._check_cabinet_commands()
             except Exception as e:
-                logger(f"监控异常{e}")
+                logger.error(f"监控异常{e}")
 
             self._stop_event.wait(self.MONITOR_INTERVAL)
 
@@ -95,7 +95,7 @@ class PLC_Simulator:
     def _check_gripper_commands(self) -> None:
         for gid in range(1, GripperAddr.GRIPPER_COUNT + 1):
             pos_addr = GripperAddr.pos_addr(gid)
-            pos_val = self._read_rag(pos_addr)
+            pos_val = self._read_reg(pos_addr)
 
             if pos_val > 0:
                 sim_key = f"gripper_{gid}"
@@ -106,7 +106,7 @@ class PLC_Simulator:
                     self._active_simulations[sim_key] = True
 
                 count_val = self._read_reg(GripperAddr.count_addr(gid))
-                size_val = self._read_rag(GripperAddr.size_addr(gid))
+                size_val = self._read_reg(GripperAddr.size_addr(gid))
                 logger.info(f"[模拟] 夹爪{gid} 收到抓取指令: "f"层={pos_val}, 数量={count_val}, 尺寸={size_val}")
                 t = threading.Thread(target = self._simulate_gripper, args = (gid, pos_val), daemon = True)
                 t.start()
@@ -114,8 +114,8 @@ class PLC_Simulator:
     # 检测库位传送带寄存器
     def _check_cabinet_commands(self) -> None:
         for sid in range(1, CabinetCtrlAddr.STATION_COUNT + 1):
-            place_addr = CabinetCtrlAddr(sid)
-            place_val = self._read_rag(place_addr)
+            place_addr = CabinetCtrlAddr.place_addr(sid)
+            place_val = self._read_reg(place_addr)
 
             if place_val > 0:
                 sim_key = f"cabinet_place_{sid}"
@@ -127,11 +127,11 @@ class PLC_Simulator:
 
                 logger.info(f"[模拟] 工作站{sid} 收到收纳柜放货指令")
 
-                t = threading.Thread(target = self._simulate_cabinet_place, args = (sid), daemon = True)
+                t = threading.Thread(target = self._simulate_cabinet_place, args = (sid,), daemon = True)
                 t.start()
-            for layer in range(1, CabinetCtrlAddr.REGISTERS_PER_STATION + 1):
+            for layer in range(1, 5):
                 fwd_addr = CabinetCtrlAddr.forward_addr(sid, layer)
-                fwd_val = self._read_rag(fwd_addr)
+                fwd_val = self._read_reg(fwd_addr)
 
                 if fwd_val > 0:
                     sim_key = f"cabinet_fwd_{sid}_{layer}"
@@ -201,6 +201,8 @@ class PLC_Simulator:
             logger.debug(f"[模拟] 工作站{station_id} 放货完成")
 
         finally:
+            place_addr = CabinetCtrlAddr.place_addr(station_id)
+            self._write_reg(place_addr, 0)
             with self._sim_lock:
                 self._active_simulations.pop(sim_key, None)
 
@@ -231,6 +233,8 @@ class PLC_Simulator:
             logger.debug(f"[模拟] 工作站{station_id} {layer}层 前进完成")
 
         finally:
+            fwd_addr = CabinetCtrlAddr.forward_addr(station_id, layer)
+            self._write_reg(fwd_addr, 0)
             with self._sim_lock:
                 self._active_simulations.pop(sim_key, None)
 
@@ -244,4 +248,57 @@ class PLC_Simulator:
         self._write_reg(StatusAddr.EMERGENCY_STOP, 0)
         logger.info("[模拟] 急停报警已清除")
 
+    # 模拟工作站出现轴故障
+    def simulate_fault(self, station_id: int, axle: str, fault_code: int) -> None:
+        addr = StatusAddr.fault_addr(station_id, axle)
+        self._write_reg(addr, fault_code)
+        logger.warning(f"[模拟]工作站{station_id}{axle}, 故障码{fault_code}")
+
+    # 清楚轴故障异常
+    def clear_fault(self, station_id: int, axle: str) -> None:
+        addr = StatusAddr.fault_addr(station_id, axle)
+        self._write_reg(addr, 0)
+
+    # 模拟库位传送带超时异常
+    def simulate_cabinet_timeout(self, station_id: int, layer: int) -> None:
+        addr = StatusAddr.timeout_addr(station_id, layer)
+        self._write_reg(addr, 1)
+        logger.warning(f"[模拟]工作站{station_id}{layer}层收纳柜超时")
+
+    # 返回全部寄存器值
+    def get_all_registers(self) -> dict:
+        result = {}
+        ctrl = self._read_regs(RegisterRange.CTRL_START, RegisterRange.CTRL_COUNT)
+        status = self._read_regs(RegisterRange.STATUS_START, RegisterRange.STATUS_COUNT)
+        
+        for i, v in enumerate(ctrl):
+            result[f"D{i}"] = v
+        for i, v in enumerate(status):
+            result[f"D{100 + i}"] = v
+
+        return result
     
+
+
+if __name__ == "__main__":
+    import time
+    sim = PLC_Simulator(host= "127.0.0.1", port= 12888)
+
+    sim.start()
+
+    sim.simulate_emergency_stop()
+    time.sleep(1)
+
+
+    
+  
+    
+    
+    try:
+        while True:
+            time.sleep(2)
+            regs = sim.get_all_registers()
+            
+            
+    except KeyboardInterrupt:
+       sim.stop()

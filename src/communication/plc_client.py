@@ -5,7 +5,7 @@ from src.utils.logger import logger
 from src.exception.exception import PLCCommunicationError
 
 import threading
-
+import time
 logger = logger.bind(tag = "PLCClient")
 
 class PLC_Client:
@@ -53,17 +53,38 @@ class PLC_Client:
                 device_name=f"PLC[{self.host}:{self.port}]"
             )
     
-    def _ensure_connection(self) -> None:
-        if not self._client.connected:
-            logger.warning(f"PLC未连接,正在尝试重新连接: {self.host}:{self.port}")
-            self.connect_to_plc()
-        if not self._client.connected:
-            logger.error(f"PLC连接失败: {self.host}:{self.port}")
-            raise PLCCommunicationError(
-                message=f"PLC连接失败,无法执行操作: {self.host}:{self.port}",
-                device_name=f"PLC[{self.host}:{self.port}]"
-            )
+    # 重试连接
+    def _ensure_connection(self, max_retries: int = 3, interval: float = 1.0, backoff: float = 1.0) -> None:
+        if self._client.connected:
+            return
+        retry_count = 0
+        current_interval = interval
+        while True:
+            try:
+                self._client.connect()
+                if self._client.connected:
+                    logger.info(f"PLC已连接: {self.host}:{self.port}" +
+                               (f" (重试{retry_count}次)" if retry_count > 0 else ""))
+                    return
+            except Exception as e:
+                logger.debug(f"连接异常: {e}")
 
+            retry_count += 1
+            if max_retries > 0 and retry_count >= max_retries:
+                raise PLCCommunicationError(
+                    message=f"PLC连接失败, 已达最大重试次数{max_retries}: {self.host}:{self.port}",
+                    device_name=f"PLC[{self.host}:{self.port}]"
+                )
+
+            logger.warning(
+                f"PLC未连接, {current_interval:.1f}秒后重试 "
+                f"({retry_count}/{max_retries if max_retries > 0 else '∞'}): "
+                f"{self.host}:{self.port}"
+            )
+            time.sleep(current_interval)
+            current_interval *= backoff
+
+        
     # 断开PLC连接
     def plc_close(self) -> None:
         if self._client.connected:

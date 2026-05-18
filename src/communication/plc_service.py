@@ -23,7 +23,7 @@ class PLC_Service:
         return self._status_data
     
     def start_connects(self) -> None:
-        self._plc_client.connect_to_plc()
+        self._plc_client._ensure_connection(max_retries= -1, interval = 3.0, backoff = 1.0)
 
     def close(self) -> None:
         self.stop_status_polling()
@@ -195,3 +195,34 @@ class PLC_Service:
         for layer in range(1, 5):
             self.clear_cabinet_timeout(station_id, layer)
         return True
+    
+
+if __name__ == "__main__":
+    plc = PLC_Client(host = '127.0.0.1', port = 12888, slave_id= 1, timeout= 5)
+    plc_service = PLC_Service(plc)
+    plc_service.start_connects()
+    plc_service.start_status_polling(interval=0.3)
+    time.sleep(1)
+
+    commands = [
+        {"gripper_id": 1, "layer": 1, "count": 2, "size": 1},
+        {"gripper_id": 2, "layer": 2, "count": 1, "size": 2},
+        {"gripper_id": 3, "layer": 3, "count": 3, "size": 1},
+        {"gripper_id": 4, "layer": 1, "count": 4, "size": 2},
+        {"gripper_id": 5, "layer": 4, "count": 1, "size": 1},
+        {"gripper_id": 6, "layer": 2, "count": 2, "size": 2},
+    ]
+    plc_service.command_gripper_batch(commands, delay_before_pos= 0.6)
+
+    plc_service.command_cabinet_place(3)
+    try:
+        while True:
+            time.sleep(1)
+            print(plc_service.get_full_status())
+    except KeyboardInterrupt:
+        plc_service.stop_status_polling()
+        plc_service.close()
+        logger.info("程序已停止")
+
+    
+    

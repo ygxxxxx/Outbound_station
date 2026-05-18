@@ -25,12 +25,9 @@ logs/
 temp/
 
 docs/*
-!docs/出库工作站上位机功能设计及工作安排*.pdf
 !docs/智能分拣软件的功能设计*.docx
-!docs/任务管理系统.md
-!docs/出库工作站上位机-RCS通信协议*.pdf
 !docs/出库工作站上位机-视觉门通信协议*.pdf
-!docs/玩觅出入库分拣系统上位机-RCS通信协议V1.0B(杨文成 20260509)*.xlsx
+!docs/玩觅出入库分拣系统上位机-RCS通信协议*.xlsx
 !docs/玩觅出库工作站modbus通信接口*.xlsx
 
 .qoder/*
