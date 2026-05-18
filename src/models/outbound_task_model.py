@@ -29,6 +29,7 @@ class OutboundTask:
     task_id: str                      # 任务id
     task_types: str                   # 任务类型
     timestamp: str                    # 时间戳
+    station_id: str                   # 工作站编号
     
     packages: List[Package] = field(default_factory = list)   # 包裹信息
     put_goods: List[Put_Goods] = field(default_factory = list) # ABR放货后工作站内的库位信息

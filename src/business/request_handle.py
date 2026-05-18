@@ -39,6 +39,7 @@ def parse_outbound_task(body_dict: dict) -> OutboundTask:
         task_id=body_dict["task_id"],
         task_types=body_dict["task_types"],
         timestamp=body_dict.get("timestamp", (int(time.time() * 1000))),
+        station_id=body_dict.get("station_id", "A"),
         packages=packages,
         put_goods=put_goods,
     )
@@ -113,7 +114,7 @@ def start() -> None:
         timeout=config.plcconfig.timeout / 1000,
     )
 
-    task_manager = TaskManager(plc_client=plc_client)
+    task_manager = TaskManager(plc_client = plc_client)
 
     state_machine = StateMachine(
         host_id="outbound_station",

@@ -1,6 +1,8 @@
 from collections import deque
-from src.communication.plc_client import PLC_Client
+from src.communication.plc_service import PLC_Service
 from src.models.outbound_task_model import OutboundTask
+from src.business.state_machine import StateMachine
+from src.business.strategy import Strategy
 
 from src.utils.logger import logger
 
@@ -12,25 +14,29 @@ logger = logger.bind(tag="TaskManager")
 class QueueTask:
     def __init__(self, task: OutboundTask):
         self.task_id = task.task_id
-        self.tesk_types = task.task_types
+        self.task_types = task.task_types
         self.status = "pending"  
         self.total_packages = task.packages_count
         self.task = task
         self.start_time = None
         self.end_time = None
 
+        self._stop_event = threading.Event()
 
 class TaskManager:
-    def __init__(self, plc_client: PLC_Client):
+    def __init__(self):
 
         # 初始化接收PLC客户端
-        self.plc_clients = plc_client
+        self.plc_service:PLC_Service = None
 
         # 初始化一个任务队列（用于保存刚接收到的任务），一个任务字典（用于保存正在执行的任务和已经完成的任务）
         self._pending: deque[QueueTask] = deque()
         self._task: dict[str, QueueTask] = {}
 
         self.rlock = threading.RLock()
+
+        self.state_machine: StateMachine = None
+        self.strategy: Strategy = None
 
         logger.info("任务管理器初始化完成")
 
@@ -80,3 +86,42 @@ class TaskManager:
                         "status": t.status,
                         "total_packages": t.total_packages,
                     }
+
+    # 循环查询_pending
+    def _check_pending_loop(self) -> None:
+        while not self._stop_event.is_set():
+            with self.rlock:
+                if not self._pending:
+                    task = None
+                else:
+                    task = self._pending[0]  # 先只读不移除
+
+            if task is None:
+                self._stop_event.wait(timeout=1.0)
+            continue
+
+        try:
+            logger.info(f"开始解析任务：{task.task_id}")
+            if task.task_types == "putway":
+                self.plc_service.command_cabinet_place(task.task.station_id)
+                self.state_machine(task)
+                
+
+
+
+            plan = self.strategy.build_plan(task)
+
+            # 解析成功，从待处理队列移除
+            with self.rlock:
+                self._pending.remove(task)
+
+            self.add_to_running(task)
+            self._execute_plan(plan)
+            self.complete_task()
+
+        except Exception as e:
+            logger.error(f"任务解析失败，留在队列中: {task.task_id}, {e}")
+            self._stop_event.wait(timeout=5.0)  # 失败后等一会再重试
+        
+        
+    
