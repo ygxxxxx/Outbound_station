@@ -116,6 +116,13 @@ class PLC_Service:
         self._plc_client.write_holding_registers(addr, [1])
         logger.info(f"下发放货库位传送带全部转动指令")
         return True
+
+    # 无货物层跳过传送带运行(写1禁止该层传送带启动，避免触发超时报警)
+    def command_cabinet_skip(self, station_id: int, layer: int) -> bool:
+        addr = CabinetCtrlAddr.skip_addr(station_id, layer)
+        self._plc_client.write_holding_registers(addr, [1])
+        logger.info(f"工作站{station_id} {layer}层: 已下发跳过传送带指令(无货物)")
+        return True
     
     # 库位传送带转动指令
     def command_cabinet_forward(self, station_id: int, layer: int) -> bool:

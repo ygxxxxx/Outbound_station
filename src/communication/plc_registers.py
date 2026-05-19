@@ -86,6 +86,20 @@ class CabinetCtrlAddr:
     WSC_L3_FWD = 31         # 3层传送带转动
     WSC_L4_FWD = 32         # 4层传送带转动
 
+    # TODO: 以下跳过传送带寄存器地址待PLC工程师确认
+    WSA_L1_SKIP = 33         # 工作站A 1层跳过(无货物时写1禁止传送带运行)
+    WSA_L2_SKIP = 34
+    WSA_L3_SKIP = 35
+    WSA_L4_SKIP = 36
+    WSB_L1_SKIP = 37
+    WSB_L2_SKIP = 38
+    WSB_L3_SKIP = 39
+    WSB_L4_SKIP = 40
+    WSC_L1_SKIP = 41
+    WSC_L2_SKIP = 42
+    WSC_L3_SKIP = 43
+    WSC_L4_SKIP = 44
+
     # 通过工作站编号获取库位集体转动地址
     @classmethod
     def place_addr(cls, station_id: int) -> int:
@@ -99,6 +113,14 @@ class CabinetCtrlAddr:
         if not 1 <= layer <= 4:
             raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
         return 18 + (station_id - 1) * cls.REGISTERS_PER_STATION + layer
+
+    # 通过工作站编号和层号获取跳过传送带地址
+    @classmethod
+    def skip_addr(cls, station_id: int, layer: int) -> int:
+        cls._validate_station_id(station_id)
+        if not 1 <= layer <= 4:
+            raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
+        return 32 + (station_id - 1) * 4 + layer
 
     @classmethod
     def _validate_station_id(cls, station_id: int):

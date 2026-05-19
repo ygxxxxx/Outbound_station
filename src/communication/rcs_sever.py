@@ -20,8 +20,8 @@ class CmdType:
     OUTBOUND_STATUS_REQ         = 1002    # 查询出库工作站状态
     OUTBOUND_STATUS_RES         = 11002
 
-    OUTBOUND_SUBDEVICE_REQ      = 1006    # 查询出库子设备状态
-    OUTBOUND_SUBDEVICE_RES      = 11006
+    OUTBOUND_WORKSTATION_PLC_STATUS_REQ = 1003  # 查询工作站PLC状态
+    OUTBOUND_WORKSTATION_PLC_STATUS_RES = 11003
 
     OUTBOUND_BATCH_REQ          = 1100    # 批量查询出库全部信息
     OUTBOUND_BATCH_RES          = 11100
@@ -29,6 +29,9 @@ class CmdType:
     # 任务接口
     OUTBOUND_TASK_DISPATCH_REQ  = 2000    # 下发出库任务
     OUTBOUND_TASK_DISPATCH_RES  = 12000
+
+    CLEAR_CONVEYOR_TIMEOUT_REQ = 2001     # 下发解除库位传送带运行超时警告指令
+    CLEAR_CONVEYOR_TIMEOUT_RES = 12001
 
 # RCS通信模块（作为服务端）
 class RCS_Sever:
