@@ -2,6 +2,7 @@ from src.communication.plc_service import PLC_Service
 from src.business.state_machine import StateMachine, StationState
 from src.business.strategy import Strategy
 from src.business.task_manager import TaskManager, QueueTask
+from src.models.containers import CabinetStore
 
 from src.utils.logger import logger
 
@@ -11,10 +12,16 @@ import time
 logger = logger.bind(tag="Task_Processing")
 
 class Task_Processing:
-    def __init__(self, taskmanger: TaskManager = None, plc_service: PLC_Service = None, state_machine: StateMachine = None):
+    def __init__(self, 
+            taskmanger: TaskManager = None, 
+            plc_service: PLC_Service = None, 
+            state_machine: StateMachine = None, 
+            cabinet_store: CabinetStore = None
+        ):
         self.taskmanger = taskmanger
         self.plc_service = plc_service
         self.state_machine = state_machine
+        self.cabinet_store = cabinet_store
 
         self._stop_event = threading.Event() 
 
@@ -41,7 +48,7 @@ class Task_Processing:
                 logger.info(f"开始解析任务：{queuetask.task_id}")
                 self.state_machine.transition(queuetask.task.station_id, StationState.READY, reason="解析任务")
                 # 解析任务类型
-                if queuetask.task_types == "putway":
+                if queuetask.task_types == "putaway":
                     self._putway_task_processing(queuetask) # 如果是放货任务进放货任务处理函数
                     
                 elif queuetask.task_types == "outbound":
@@ -184,8 +191,7 @@ class Task_Processing:
                         f"写入库位: {actual_location}, "
                         f"SKU: {pg.good_sku}, 数量: {pg.abr_count}"
                     )
-                    # TODO: 等库位管理模块完成后替换为实际写入方法
-                    # cabinet_store.update_slot(actual_location, pg.good_sku)
+                    self.cabinet_store.put_goods_to_slot(actual_location, pg.good_sku)
             else:
                 # 该层只有后区货物，传送带将货物送到前区，映射 3→1, 4→2
                 for pg in layer_put_goods[layer]:
@@ -197,8 +203,7 @@ class Task_Processing:
                         f"写入库位: {actual_location} (原始: {original}), "
                         f"SKU: {pg.good_sku}, 数量: {pg.abr_count}"
                     )
-                    # TODO: 等库位管理模块完成后替换为实际写入方法
-                    # cabinet_store.update_slot(actual_location, pg.good_sku)
+                    self.cabinet_store.put_goods_to_slot(actual_location, pg.good_sku)
 
         # 任务执行完毕，修改任务机状态，将任务在任务管理器中的状态调整至完成
         self.state_machine.transition(station_id, StationState.DELIVERED, reason="放货完成")
@@ -222,4 +227,8 @@ class Task_Processing:
 
 
 
-        self.complete_task()
+        self.taskmanger.complete_task()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        logger.info("任务处理已停止")

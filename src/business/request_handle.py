@@ -2,6 +2,7 @@ from src.business.task_manager import TaskManager, QueueTask
 from src.communication.rcs_sever import CmdType
 from src.business.state_machine import StateMachine, StationState
 from src.models.outbound_task_model import OutboundTask, Package, Put_Goods
+from src.models.containers import CabinetStore
 from src.utils.logger import logger
 from src.utils.response import build_common_response
 
@@ -46,14 +47,14 @@ def parse_outbound_task(body_dict: dict) -> OutboundTask:
 
 
 # 处理状态端口接收到的请求
-def handle_status_request(state_machine: StateMachine, cmd: int, body_dict: dict) -> dict:
+def handle_status_request(state_machine: StateMachine, cabinet_store: CabinetStore, cmd: int, body_dict: dict) -> dict:
     try:
         if cmd == CmdType.OUTBOUND_TASK_DETAIL_REQ:                 # 查询出库任务执行情况
             business_data = state_machine.get_task_execution_detail()
             return build_common_response(business_data)
 
         elif cmd == CmdType.OUTBOUND_STORAGE_REQ:                   # 查询出库工作站库位信息
-            business_data = state_machine.get_storage_info()
+            business_data = {"container": cabinet_store.to_rcs_container()}
             return build_common_response(business_data)
 
         elif cmd == CmdType.OUTBOUND_STATUS_REQ:                    # 查询出库工作站状态
@@ -66,9 +67,13 @@ def handle_status_request(state_machine: StateMachine, cmd: int, body_dict: dict
         
         elif cmd == CmdType.OUTBOUND_BATCH_REQ:                     # 批量查询出库全部信息
             business_data = {}
+            try:
+                business_data["container"] = cabinet_store.to_rcs_container()
+            except Exception as e:
+                logger.error(f"批量查询 container 失败: {e}")
+                business_data["container_error"] = str(e)
             for name, method in [
                 ("task_detail", state_machine.get_task_execution_detail),
-                ("storage", state_machine.get_storage_info),
                 ("status", state_machine.get_outbound_station_status),
                 ("plc_status", state_machine.get_workstation_plc_status),
             ]:
@@ -88,28 +93,31 @@ def handle_status_request(state_machine: StateMachine, cmd: int, body_dict: dict
 
 # 处理任务端口接收到的请求
 def handle_task_request(task_manager: TaskManager, state_machine: StateMachine, cmd: int, body_dict: dict) -> dict:
-    if cmd == CmdType.OUTBOUND_TASK_DISPATCH_REQ:               # 收到RCS下发的出库任务
-        try:
-            task = parse_outbound_task(body_dict)  # 将任务导入数据模型
-            queue_task = QueueTask(task)
+    try:
+        if cmd == CmdType.OUTBOUND_TASK_DISPATCH_REQ:               # 收到RCS下发的出库任务
+            try:
+                task = parse_outbound_task(body_dict)  # 将任务导入数据模型
+                queue_task = QueueTask(task)
 
-        except (KeyError, ValueError, TypeError) as e:
-            logger.error(f"任务解析失败{e}")
-            return build_common_response(ret_code=-1, err_msg=f"任务数据格式错误: {e}")
-        
-        state_machine.transition(body_dict.get("station_id", "A"), StationState.READY, reason="收到任务")
-        task_manager.add_to_pending(queue_task)
-        logger.info(f"收到任务: {task.task_id}")
-        return build_common_response()
+            except (KeyError, ValueError, TypeError) as e:
+                logger.error(f"任务解析失败{e}")
+                return build_common_response(ret_code=-1, err_msg=f"任务数据格式错误: {e}")
+            
+            state_machine.transition(body_dict.get("station_id", "A"), StationState.READY, reason="收到任务")
+            task_manager.add_to_pending(queue_task)
+            logger.info(f"收到任务: {task.task_id}")
+            return build_common_response()
 
-    elif cmd == CmdType.CLEAR_CONVEYOR_TIMEOUT_REQ:             # 收到RCS要求解除库位传送带运行超时指令
-        # 通过任务机解除PLC库位传送带超时报警
-        state_machine.clear_cabinet_timeout()
-        return build_common_response()
+        elif cmd == CmdType.CLEAR_CONVEYOR_TIMEOUT_REQ:             # 收到RCS要求解除库位传送带运行超时指令
+            # 通过任务机解除PLC库位传送带超时报警
+            state_machine.clear_cabinet_timeout()
+            return build_common_response()
 
-    else:
-        return build_common_response(ret_code=-1, err_msg=f"不支持的任务类型: {cmd}")
-
+        else:
+            return build_common_response(ret_code=-1, err_msg=f"不支持的任务类型: {cmd}")
+    except Exception as e:
+        logger.error(f"任务接收处理异常: cmd={cmd}, error={e}")
+        return build_common_response(ret_code=-1, err_msg=f"内部错误: {e}")
 
 
 

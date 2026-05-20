@@ -1,118 +1,201 @@
 from dataclasses import dataclass, field
-from collections import defaultdict
-from typing import Optional
+
+from src.utils.logger import logger
+from src.models.outbound_task_model import Put_Goods
+
+logger = logger.bind(tag = "containers")
+
 
 # 单个库位信息
 @dataclass
 class SlotInfo:
-    location_id: str
-    station_id: int
-    goods_ids: list[str] = field(default_factory=list)
+    location_code: str    
+    goods: list[str] = field(default_factory=list)
 
     # 判空
     @property
     def is_empty(self) -> bool:
-        return len(self.goods_ids) == 0
+        return len(self.goods) == 0
 
-    # 判断库位是否满
+    # 库位上货物数量
     @property
-    def is_full(self) -> bool:
-        return len(self.goods_ids) == 4
+    def qty(self) -> int:
+        return len(self.goods)
 
-    # 剩余容量
-    @property
-    def remaining_capacity(self) -> int:
-        return 4 - len(self.goods_ids)
+    # 判断某个sku是否在该库位上
+    def has_goods(self, good_sku: str) -> bool:
+        return good_sku in self.goods
+    
+    # 将货物追加到库位的货物列表中
+    def add_good(self, good_sku: str) -> None:
+        self.goods.append(good_sku)
+
+    # 将货物移除库位货物列表
+    def remove_goods(self, good_sku: str) -> bool:
+        if good_sku in self.goods:
+            self.goods.remove(good_sku)
+            return True
+        return False
+
+    # 清除库位货物列表
+    def clear(self) -> None:
+        self.goods = []
+
 
 # 库存管理器
 class CabinetStore:
-    def __init__(self):
-        # 库位编号
-        self._by_location: dict[str, SlotInfo] = {}
-        # 工作站编号
-        self._by_station: dict[int, dict[str, SlotInfo]] = defaultdict(dict)
-        # 货物id
-        self._goods_index: dict[str, list[str]] = defaultdict(list)
 
-    # 初始化库位
+    def __init__(self):
+        self._slots: dict[str, SlotInfo] = {} # 用字典来表示库位
+
+    # 建立库位
+    def init_slot(self, station_prefixes: list[str] = None, layers: int = 4, positions: int = 4) -> None:
+        if station_prefixes is None:
+            station_prefixes = ["A", "B", "C"]
+        for sp in station_prefixes:
+            for layer in range(1, layers + 1):
+                for position in range(1, positions + 1):
+                    code = f"{sp}{layer}{position}"
+                    self._slots[code] = SlotInfo(location_code = code)
+
+    # 创建一个store实例
     @classmethod
-    def create_from_config(
-        cls,
-        station_count: int = 3, # 工作站数量
-        cabinet_layers: int = 4, # 每台工作站层数
-        stacks_per_layer: int = 4, # 每层库位数量
-        cabinet_prefixes: Optional[list[str]] = None, # 柜前缀
-    ) -> "CabinetStore":
-        store = cls() 
-        if cabinet_prefixes is None:
-            cabinet_prefixes = [chr(ord("A") + i) for i in range(station_count)]
-        for station_id in range(1, station_count + 1):
-            prefix = cabinet_prefixes[station_id - 1]
-            for layer in range(1, cabinet_layers + 1):
-                for stack in range(1, stacks_per_layer + 1):
-                    location_id = f"{prefix}-{layer:02d}-{stack:02d}"
-                    store.add_slot(SlotInfo(
-                        location_id=location_id,
-                        station_id=station_id,
-                    ))
+    def create(cls, station_prefixes: list[str] = None, layers: int = 4, positions: int = 4) -> "CabinetStore":
+        store = cls()
+        store.init_slot(station_prefixes, layers, positions)
         return store
 
-    # 添加库位
-    def add_slot(self, slot: SlotInfo) -> None:
-        self._by_location[slot.location_id] = slot
-        self._by_station[slot.station_id][slot.location_id] = slot
-        for gid in slot.goods_ids:
-            self._goods_index[gid].append(slot.location_id)
-
-    # 更新库位
-    def update_slot(self, location_id: str, goods_ids: list[str]) -> None:
-        slot = self._by_location.get(location_id)
-        if slot is None:
-            return
-        for gid in slot.goods_ids:
-            locs = self._goods_index.get(gid, [])
-            if location_id in locs:
-                locs.remove(location_id) # 清楚久关联
-        slot.goods_ids = list(goods_ids) # 把货物列表添加到库位信息中
-        for gid in slot.goods_ids:
-            self._goods_index[gid].append(location_id) #添加新关联
-
-    # 移除货物
-    def remove_goods(self, location_id: str, goods_id: str) -> None:
-        slot = self._by_location.get(location_id)
-        if slot and goods_id in slot.goods_ids:
-            slot.goods_ids.remove(goods_id)
-            locs = self._goods_index.get(goods_id, [])
-            if location_id in locs:
-                locs.remove(location_id)
-
-    # 获得单个库位信息
-    def get_slot(self, location_id: str) -> Optional[SlotInfo]:
-        return self._by_location.get(location_id)
-
-    # 找到货物位置
-    def find_by_goods(self, goods_id: str) -> list[SlotInfo]:
-        loc_ids = self._goods_index.get(goods_id, [])
-        return [self._by_location[lid] for lid in loc_ids if lid in self._by_location]
-
-    # 获得工作站全部库位信息
-    def find_by_station(self, station_id: int) -> list[SlotInfo]:
-        return list(self._by_station[station_id].values())
-
-    # 获得全部库位信息
-    def get_all(self) -> list[SlotInfo]:
-        return list(self._by_location.values())
-
-    # 获得全部货物数量
-    def get_all_goods_count(self) -> int:
-        return sum(len(s.goods_ids) for s in self._by_location.values())
-
-    # 获得单个工作站货物数量
-    def get_station_goods_count(self, station_id: int) -> int:
-        return sum(len(s.goods_ids) for s in self._by_station[station_id].values())
+    # 根据库位编码获取单个库位信息
+    def get_slot(self, location_code: str) -> SlotInfo | None:
+        slot = self._slots.get(location_code, None)
+        return slot
     
+    # 获取所有库位信息
+    def get_all_slots(self) -> list[SlotInfo]:
+        return list(self._slots.values())
+        
+    # 获取指定工作站的全部库位信息
+    def get_station_slot(self, station_prefix: str) -> list[SlotInfo]:
+        return [slot for code, slot in self._slots.items() if code[0] == station_prefix]
 
-if __name__ == "__main__":
-    cabint = CabinetStore.create_from_config(station_count = 3, cabinet_layers = 4, stacks_per_layer = 4)
-    # print(cabint.get_all())
-    print(cabint.find_by_station(3))
+    # 获得指定工作站的指定层的所有库位信息
+    def get_slots_by_layer(self, station_prefix: str, layer: int) -> list[SlotInfo]:
+        return [
+        slot for code, slot in self._slots.items()
+        if code[0] == station_prefix and code[1] == str(layer)
+    ]
+
+    # 查找指定SKU货物所在的全部库位
+    def find_goods(self, goods_sku: str) -> list[SlotInfo]:
+        return [slot for slot in self._slots.values() if slot.has_goods(goods_sku)]
+
+    # 获得工作站货物总数
+    def get_station_goods_count(self, station_prefix: str) -> int:
+        total = 0
+        for code, slot in self._slots.items():
+            if code[0] == station_prefix:
+                total += slot.qty
+        return total
+    
+    # 获取所有工作站的货物总数
+    def get_total_goods_count(self) -> int:
+        return sum(slot.qty for slot in self._slots.values())
+
+    # 向指定库位写入一批货物
+    def put_goods_to_slot(self, location_code: str, goods_sku_list: list[str]) -> bool:
+        slot = self.get_slot(location_code)
+        if not slot:
+            return False
+        for good_sku in goods_sku_list:
+            if slot.qty < 4:
+                slot.add_good(good_sku)
+            else:
+                logger.error(f"{location_code}库位已满,{good_sku}货物无法加入")
+                return False
+        return True
+
+    # 批量向库位放入货物
+    def batch_putaway(self, put_goods_list: list[Put_Goods]) -> None:
+        for pg in put_goods_list:
+            if pg.abr_count > 0:
+                self.put_goods_to_slot(pg.storage_location, pg.good_sku)
+                logger.info(f"放货进入库位 {pg.storage_location}: {pg.good_sku}, 数量: {pg.abr_count}")
+
+    # 从指定库位移除一个货物
+    def remove_goods_from_slot(self, location_code: str, good_sku: str) -> bool:
+        slot = self._slots.get(location_code)
+        if not slot:
+            return False
+        return slot.remove_goods(good_sku)
+    
+    # 从指定库位批量移除多个货物
+    def remove_goods_batch(self, location_code: str, goods_sku_list: list[str]) -> int:
+        slot = self._slots.get(location_code)
+        if not slot:
+            return 0
+        count = 0 # 移除的货物数量
+        for sku in goods_sku_list:
+            if slot.remove_goods(sku):
+                count += 1
+        return count
+    
+    # 清空指定库位的所有货物
+    def clear_slot(self, location_code: str) -> bool:
+        slot = self._slots.get(location_code)
+        if not slot:
+            return False
+        slot.clear()
+        return True
+    
+    # 清空指定工作站的所有库位
+    def clear_station(self, station_prefix: str) -> None:
+        slots = self.get_station_slot(station_prefix)
+        for slot in slots:
+            slot.clear()
+    
+    # 清空所有工作站的全部库位
+    def clear_all(self) -> None:
+        for slot in self._slots.values():
+            slot.clear()
+
+    # 将所有库位信息导出为 RCS 协议要求的 container 数组格式
+    def to_rcs_container(self) -> list[dict]:
+        result = []
+        for code in sorted(self._slots.keys()):
+            slot = self._slots[code]
+            result.append({
+                "storage_bin": slot.location_code,
+                "qty": slot.qty,
+                "goods": list(slot.goods),
+            })
+        return result
+    
+    # 解析库位编码，返回其各部分信息
+    @staticmethod
+    def parse_location(location_code: str) -> tuple[str, int, int]:
+        return location_code[0], int(location_code[1]), int(location_code[2])
+    
+    # 从库位编码中提取工作站编号前缀
+    @staticmethod
+    def get_station_prefix(location_code: str) -> str:
+        return location_code[0]
+    
+    # 从库位编码中提取层号
+    @staticmethod
+    def get_layer(location_code: str) -> int:
+        return int(location_code[1])
+    
+    # 从库位编码中提取位置号
+    @staticmethod
+    def get_position(location_code: str) -> int:
+        return int(location_code[2])
+    
+    # 判断该库位是否在靠近机械臂的前区（位置1或2）
+    @staticmethod
+    def is_front_position(location_code: str) -> bool:
+        return location_code[2] in ("1", "2")
+    
+    # 判断该库位是否在远离机械臂的后区（位置3或4)
+    @staticmethod
+    def is_back_position(location_code: str) -> bool:
+        return location_code[2] in ("3", "4")

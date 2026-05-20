@@ -19,7 +19,7 @@ class Package:
     logistics: Optional[str] = None       # 物流类型
     manual_process_type: Optional[str] = None  # 人工处理类型
     packaging_line: Optional[str] = None  # 打包线
-    count: int                            # 包裹中货物数量
+    count: int = 0                        # 包裹中货物数量
     goods: List[str] = field(default_factory = list)  # 货物信息
 
 

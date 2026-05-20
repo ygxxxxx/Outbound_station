@@ -5,6 +5,7 @@ from src.business.request_handle import parse_outbound_task, handle_status_reque
 from src.business.state_machine import StateMachine
 from src.business.task_manager import TaskManager
 from src.business.task_processing import Task_Processing
+from src.models.containers import CabinetStore
 from src.config.settings import config
 from src.utils.logger import logger
 
@@ -19,16 +20,17 @@ logger = logger.bind(tag="Main")
 rcs: RCS_Sever = None
 plc: PLC_Service = None
 vis: VisionGateClient = None
-state: VisionGateClient = None
+state: StateMachine = None
 taskmanger: TaskManager = None
 taskprocessing: Task_Processing = None
-
+cabinet_store: CabinetStore = None
 
 def start():
-    global rcs, plc, vis, state, taskmanger, taskprocessing
+    global rcs, plc, vis, state, taskmanger, taskprocessing, cabinet_store
     
     state = StateMachine()
     taskmanager = TaskManager()
+    cabinet_store = CabinetStore.create(station_prefixes=["A", "B", "C"])
 
     on_status = partial(handle_status_request, state)
     on_task = partial(handle_task_request, taskmanager, state)
@@ -40,6 +42,7 @@ def start():
     vis = VisionGateClient()
     
     taskprocessing = Task_Processing(taskmanger, plc, state)
+
 
 
 

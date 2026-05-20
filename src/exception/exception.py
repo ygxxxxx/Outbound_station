@@ -16,7 +16,7 @@ class OutboundStationError(Exception):
             mes.append(f"设备名称: {self.device_name}")
         if self.details is not None:
             mes.append(f"详情: {self.details}")
-        return " | ".join(mes)
+        return  "|".join([item if item is not None else "" for item in mes])
 
 # 通信异常基类
 @dataclass
