@@ -38,7 +38,7 @@ class _DummyStateMachine:
 class _DummyPLCService:
     def __init__(self, *args, **kwargs):
         pass
-    def command_cabinet_skip(self, *args, **kwargs):
+    def command_cabinet_no_box(self, *args, **kwargs):  
         pass
     def command_cabinet_place(self, *args, **kwargs):
         pass

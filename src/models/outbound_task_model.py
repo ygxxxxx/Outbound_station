@@ -1,6 +1,9 @@
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from src.utils.logger import logger
+
+logger = logger.bind(tag = "outbound_task_model")
 
 # goods货物数据object
 @dataclass

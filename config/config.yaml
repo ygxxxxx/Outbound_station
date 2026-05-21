@@ -10,27 +10,12 @@ RCS:
     rcs_address: ""      # RCS 接口地址
     rcs_port:                   # RCS 端口号
 
-# 工作站设备配置
-workstation:
-    count: 3                    # 工作站数量
-    gripper_count: 2            # 每台夹爪数量
-    cabinet_layers: 4           # 收纳柜层数
-    max_stacks_per_layer: 4     # 每层堆数
-
-# 输送线配置
-conveyor:
-    cargo_min_spacing: 300      # 货物最小间距（mm）
-    speed: 1.5                  # 输送线速度(m/s)
-
-# 扫码配置
-scanner:
-    scanner_timeout: 500                # 扫码超时(ms)
+# 视觉门配置
+visiongate:
+    vg_address: ""
+    vg_port:
 
 # 异常处理配置
 exception:
     max_retry_count: 3          # 最大重试次数
 
-# 视觉门配置
-visiongate:
-    vg_address: ""
-    vg_port:

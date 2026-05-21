@@ -1,7 +1,6 @@
 from collections import deque
 
 from src.models.outbound_task_model import OutboundTask
-from src.business.strategy import Strategy
 from src.utils.logger import logger
 
 import threading
@@ -27,8 +26,6 @@ class TaskManager:
         self._task: dict[str, QueueTask] = {}
 
         self.rlock = threading.RLock()
-
-        self.strategy: Strategy = None
 
         logger.info("任务管理器初始化完成")
 

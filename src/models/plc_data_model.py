@@ -1,8 +1,11 @@
 from src.communication.plc_registers import StatusAddr
+from src.utils.logger import logger
+
 from dataclasses import dataclass, field
 from typing import List, Optional, Dict
 from threading import RLock
 
+logger = logger.bind(tag = "plc_data_model")
 
 # 单个夹爪状态
 @dataclass

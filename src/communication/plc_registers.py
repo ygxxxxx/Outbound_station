@@ -59,6 +59,21 @@ class GripperAddr:
         if not 1 <= gripper_id <= cls.GRIPPER_COUNT:
             raise ParameterError(message=f"夹爪编号超出范围", expected_value=f"1~{cls.GRIPPER_COUNT}", actual_value=str(gripper_id))
 
+    GRIPPER_1_PLACE_COUNT = 33 # 夹爪1放置鞋盒数量
+    GRIPPER_2_PLACE_COUNT = 34 # 夹爪2放置鞋盒数量
+    GRIPPER_3_PLACE_COUNT = 35 # 夹爪3放置鞋盒数量
+    GRIPPER_4_PLACE_COUNT = 36 # 夹爪4放置鞋盒数量
+    GRIPPER_5_PLACE_COUNT = 37 # 夹爪5放置鞋盒数量
+    GRIPPER_6_PLACE_COUNT = 38 # 夹爪6放置鞋盒数量
+    
+    # 通过夹爪编号获取该夹爪的放货数量寄存器地址
+    @classmethod
+    def place_count_addr(cls, gripper_id: int) -> int:
+        cls._validate_gripper_id(gripper_id)
+        return 32 + gripper_id  # 即 (gripper_id - 1) + 33
+
+
+
 
 # 库位传送带寄存器
 class CabinetCtrlAddr:
@@ -86,19 +101,20 @@ class CabinetCtrlAddr:
     WSC_L3_FWD = 31         # 3层传送带转动
     WSC_L4_FWD = 32         # 4层传送带转动
 
-    # TODO: 以下跳过传送带寄存器地址待PLC工程师确认
-    WSA_L1_SKIP = 33         # 工作站A 1层跳过(无货物时写1禁止传送带运行)
-    WSA_L2_SKIP = 34
-    WSA_L3_SKIP = 35
-    WSA_L4_SKIP = 36
-    WSB_L1_SKIP = 37
-    WSB_L2_SKIP = 38
-    WSB_L3_SKIP = 39
-    WSB_L4_SKIP = 40
-    WSC_L1_SKIP = 41
-    WSC_L2_SKIP = 42
-    WSC_L3_SKIP = 43
-    WSC_L4_SKIP = 44
+
+    WSA_L1_NO_BOX = 39  # 工作站1 一层收纳柜放货时无鞋盒
+    WSA_L2_NO_BOX = 40
+    WSA_L3_NO_BOX = 41
+    WSA_L4_NO_BOX = 42
+    WSB_L1_NO_BOX = 43
+    WSB_L2_NO_BOX = 44
+    WSB_L3_NO_BOX = 45
+    WSB_L4_NO_BOX = 46
+    WSC_L1_NO_BOX = 47
+    WSC_L2_NO_BOX = 48
+    WSC_L3_NO_BOX = 49
+    WSC_L4_NO_BOX = 50
+ 
 
     # 通过工作站编号获取库位集体转动地址
     @classmethod
@@ -114,14 +130,14 @@ class CabinetCtrlAddr:
             raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
         return 18 + (station_id - 1) * cls.REGISTERS_PER_STATION + layer
 
-    # 通过工作站编号和层号获取跳过传送带地址
+    # 通过工作站编号和层号获取放货时无鞋盒需要跳过的传送带地址
     @classmethod
-    def skip_addr(cls, station_id: int, layer: int) -> int:
+    def no_box_addr(cls, station_id: int, layer: int) -> int:
         cls._validate_station_id(station_id)
         if not 1 <= layer <= 4:
-            raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
-        return 32 + (station_id - 1) * 4 + layer
-
+            raise ParameterError(...)
+        return 38 + (station_id - 1) * 4 + layer  
+    
     @classmethod
     def _validate_station_id(cls, station_id: int):
         if not 1 <= station_id <= cls.STATION_COUNT:
@@ -277,8 +293,8 @@ class StatusAddr:
 class RegisterRange:
 
     CTRL_START = 0           # 控制区起始地址
-    CTRL_END = 32            # 控制区结束地址
-    CTRL_COUNT = 33          # 控制区寄存器总数
+    CTRL_END = 50            # 控制区结束地址
+    CTRL_COUNT = 51          # 控制区寄存器总数
 
     STATUS_START = 100       # 状态区起始地址
     STATUS_END = 166         # 状态区结束地址

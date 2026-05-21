@@ -1,6 +1,6 @@
 from src.communication.plc_service import PLC_Service
 from src.business.state_machine import StateMachine, StationState
-from src.business.strategy import Strategy
+from src.business.strategy import strategy
 from src.business.task_manager import TaskManager, QueueTask
 from src.models.containers import CabinetStore
 
@@ -102,7 +102,7 @@ class Task_Processing:
 
         # 无货物的层：下发跳过指令，禁止传送带运行
         for layer in sorted(empty_layers):
-            self.plc_service.command_cabinet_skip(station_id, layer)
+            self.plc_service.command_cabinet_no_box(station_id, layer)
 
         # 所有层都没有货物，直接跳过
         if not goods_layers:

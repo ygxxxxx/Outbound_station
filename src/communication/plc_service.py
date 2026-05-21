@@ -59,6 +59,7 @@ class PLC_Service:
         layer: int,
         count: int,
         size: int,
+        place_count: int,
         delay_before_pos: float = 0.6,
     ) -> bool:
 
@@ -70,11 +71,13 @@ class PLC_Service:
         count_addr = GripperAddr.count_addr(gripper_id)
         size_addr = GripperAddr.size_addr(gripper_id)
         pos_addr = GripperAddr.pos_addr(gripper_id)
+        place_count_addr = GripperAddr.place_count_addr(gripper_id)
 
         # 写入数量和尺寸
         self._plc_client.write_holding_registers(count_addr, [count])
         self._plc_client.write_holding_registers(size_addr, [size])
-        logger.info(f"夹爪{gripper_id}: 已写入数量={count}, 尺寸={size}")
+        self._plc_client.write_holding_registers(place_count_addr, [place_count])
+        logger.info(f"夹爪{gripper_id}: 已写入数量={count}, 尺寸={size},放置货物数量={place_count}")
 
         if delay_before_pos < 0.5:
             delay_before_pos = 0.5
@@ -95,8 +98,10 @@ class PLC_Service:
             gid = cmd["gripper_id"]
             count_addr = GripperAddr.count_addr(gid)
             size_addr = GripperAddr.size_addr(gid)
+            place_count_addr = GripperAddr.place_count_addr(gid)
             self._plc_client.write_holding_registers(count_addr, [cmd["count"]])
             self._plc_client.write_holding_registers(size_addr, [cmd["size"]])
+            self._plc_client.write_holding_registers(place_count_addr, [cmd["place_count"]])
             
         if delay_before_pos < 0.5:
             delay_before_pos = 0.5
@@ -118,8 +123,8 @@ class PLC_Service:
         return True
 
     # 无货物层跳过传送带运行(写1禁止该层传送带启动，避免触发超时报警)
-    def command_cabinet_skip(self, station_id: int, layer: int) -> bool:
-        addr = CabinetCtrlAddr.skip_addr(station_id, layer)
+    def command_cabinet_no_box(self, station_id: int, layer: int) -> bool:
+        addr = CabinetCtrlAddr.no_box_addr(station_id, layer)  # 使用新方法
         self._plc_client.write_holding_registers(addr, [1])
         logger.info(f"工作站{station_id} {layer}层: 已下发跳过传送带指令(无货物)")
         return True
