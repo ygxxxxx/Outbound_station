@@ -210,7 +210,7 @@ class PLC_Service:
     
 
 if __name__ == "__main__":
-    plc = PLC_Client(host = '127.0.0.1', port = 12888, slave_id= 1, timeout= 5)
+    plc = PLC_Client(host = '192.168.1.88', port = 502, slave_id= 1, timeout= 5)
     plc_service = PLC_Service(plc)
     plc_service.start_connects()
     plc_service.start_status_polling(interval=0.3)
