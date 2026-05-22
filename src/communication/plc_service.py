@@ -3,7 +3,7 @@ from typing import Optional, List, Dict
 
 from src.utils.logger import logger
 from src.communication.plc_client import PLC_Client
-from src.communication.plc_registers import GripperAddr, CabinetCtrlAddr, StatusAddr, RegisterRange
+from src.communication.plc_registers import GripperAddr, CabinetCtrlAddr, StatusAddr, RegisterRange, OutboundAddr
 from src.models.plc_data_model import PLCStatusData, GripperState, StationState
 from src.exception.exception import ParameterError
 
@@ -88,13 +88,14 @@ class PLC_Service:
         return True
 
     # 控制多个夹爪
-    def command_gripper_batch(self, commands: List[Dict], delay_before_pos: float = 0.6) -> bool:
+    def command_gripper_batch(self, commands: List[Dict], outbound_count: int = 0, delay_before_pos: float = 0.6) -> bool:
         for cmd in commands:
             if not 1 <= cmd.get("layer", 0) <= 4:
                 raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(cmd.get("layer")))
             if not 1 <= cmd.get("count", 0) <= 4:
                 raise ParameterError(message="数量超出范围", expected_value="1~4", actual_value=str(cmd.get("count")))
 
+            
             gid = cmd["gripper_id"]
             count_addr = GripperAddr.count_addr(gid)
             size_addr = GripperAddr.size_addr(gid)
@@ -102,7 +103,10 @@ class PLC_Service:
             self._plc_client.write_holding_registers(count_addr, [cmd["count"]])
             self._plc_client.write_holding_registers(size_addr, [cmd["size"]])
             self._plc_client.write_holding_registers(place_count_addr, [cmd["place_count"]])
-            
+        # 本批次出库数量
+        if outbound_count > 0:
+            self._plc_client.write_holding_registers(OutboundAddr.BATCH_COUNT, [outbound_count])    
+        
         if delay_before_pos < 0.5:
             delay_before_pos = 0.5
         time.sleep(delay_before_pos)
@@ -131,12 +135,18 @@ class PLC_Service:
     
     # 库位传送带转动指令
     def command_cabinet_forward(self, station_id: int, layer: int) -> bool:
-       
         addr = CabinetCtrlAddr.forward_addr(station_id, layer)
         self._plc_client.write_holding_registers(addr, [1])
         logger.info(f"工作站{station_id} {layer}层: 已下发库位转动指令")
         return True
     
+    # 库位传送带后退命令
+    def command_cabinet_backward(self, station_id: int, layer: int) -> bool:
+        addr = CabinetCtrlAddr.backward_addr(station_id, layer)
+        self._plc_client.write_holding_registers(addr, [1])
+        logger.info(f"工作站{station_id} {layer}层: 已下库位后退指令")
+        return True
+
     # 获取指定夹爪的当前状态
     def get_gripper_state(self, gripper_id: int) -> Optional[GripperState]: 
         return self._status_data.get_gripper_state(gripper_id)
@@ -208,6 +218,25 @@ class PLC_Service:
             self.clear_cabinet_timeout(station_id, layer)
         return True
     
+    # 每批次出库鞋盒数量
+    def command_outbound_batch_count(self, count: int) -> bool:
+        if not 1 <= count <= 6:
+            raise ParameterError(message="出库批次数量超出范围", expected_value="1~6", actual_value=str(count))
+        self._plc_client.write_holding_registers(OutboundAddr.BATCH_COUNT, [count])
+        logger.info(f"已下发每批次鞋盒出库数量: {count}")
+        return True
+
+    # 阅读出库完成标志
+    def read_outbound_complete(self) -> bool:
+        result = self._plc_client.read_holding_registers(OutboundAddr.COMPLETE_FLAG, 1)
+        return result[0] == 1
+
+    # 清楚出库完成标志，每次出库完成后，出库完成标志会置1，在发送下一批出库指令时需要把标志置1
+    def clear_outbound_complete(self) -> bool:
+        self._plc_client.write_holding_registers(OutboundAddr.COMPLETE_FLAG, [0])
+        logger.info("已清除鞋盒出库完成标志")
+        return True
+
 
 if __name__ == "__main__":
     plc = PLC_Client(host = '192.168.1.88', port = 502, slave_id= 1, timeout= 5)

@@ -1,11 +1,60 @@
 import time
 import sys
+import json
 
 from src.communication.plc_client import PLC_Client
 from src.communication.plc_service import PLC_Service
+from src.communication.plc_registers import GripperAddr, CabinetCtrlAddr, StatusAddr, RegisterRange, OutboundAddr
 from src.exception.exception import ParameterError
+from src.utils.logger import logger
+
+log = logger.bind(tag="test_plc_service")
 
 
+CTRL_NAMES = {}
+for gid in range(1, 7):
+    CTRL_NAMES[GripperAddr.pos_addr(gid)] = f"夹爪{gid}抓取位置"
+    CTRL_NAMES[GripperAddr.count_addr(gid)] = f"夹爪{gid}货物数量"
+    CTRL_NAMES[GripperAddr.size_addr(gid)] = f"夹爪{gid}货物尺寸"
+for gid in range(1, 7):
+    CTRL_NAMES[GripperAddr.place_count_addr(gid)] = f"夹爪{gid}放置数量"
+for sid in range(1, 4):
+    CTRL_NAMES[CabinetCtrlAddr.place_addr(sid)] = f"工作站{sid}库位集体转动"
+    for layer in range(1, 5):
+        CTRL_NAMES[CabinetCtrlAddr.forward_addr(sid, layer)] = f"工作站{sid} {layer}层传送带前进"
+        CTRL_NAMES[CabinetCtrlAddr.no_box_addr(sid, layer)] = f"工作站{sid} {layer}层无货物跳过"
+        CTRL_NAMES[CabinetCtrlAddr.backward_addr(sid, layer)] = f"工作站{sid} {layer}层传送带后退"
+CTRL_NAMES[OutboundAddr.BATCH_COUNT] = "每批次鞋盒出库数量"
+CTRL_NAMES[OutboundAddr.COMPLETE_FLAG] = "鞋盒出库完成标志"
+
+STATUS_NAMES = {}
+for gid in range(1, 7):
+    STATUS_NAMES[StatusAddr.gripper_status_addr(gid)] = f"夹爪{gid}状态"
+for sid in range(1, 4):
+    for layer in range(1, 5):
+        STATUS_NAMES[StatusAddr.conveyor_status_addr(sid, layer)] = f"工作站{sid} {layer}层传送带状态"
+        STATUS_NAMES[StatusAddr.photo_addr(sid, layer, "front")] = f"工作站{sid} {layer}层前光电"
+        STATUS_NAMES[StatusAddr.photo_addr(sid, layer, "back")] = f"工作站{sid} {layer}层后光电"
+for sid in range(1, 4):
+    for axle in StatusAddr.AXLE_NAMES:
+        STATUS_NAMES[StatusAddr.fault_addr(sid, axle)] = f"工作站{sid} {axle}故障码"
+STATUS_NAMES[StatusAddr.EMERGENCY_STOP] = "急停报警"
+for sid in range(1, 4):
+    for layer in range(1, 5):
+        STATUS_NAMES[StatusAddr.timeout_addr(sid, layer)] = f"工作站{sid} {layer}层超时报警"
+
+
+def print_registers(regs, start_addr, name_map, area_name):
+    lines = []
+    for i, val in enumerate(regs):
+        addr = start_addr + i
+        name = name_map.get(addr, "未定义")
+        line = f"  D{addr:>3} = {val:<6} | {name}"
+        lines.append(line)
+        log.info(line)
+    print(f"\n  === {area_name} (D{start_addr}~D{start_addr + len(regs) - 1}) ===")
+    for line in lines:
+        print(line)
 PLC_HOST = "192.168.1.88"
 PLC_PORT = 502
 PLC_SLAVE_ID = 1
@@ -26,6 +75,9 @@ TEST_FUNCTIONS = {
     "11": ("清除单层超时标志",        "test_clear_timeout"),
     "12": ("清除全部层超时标志",      "test_clear_all_timeouts"),
     "13": ("边界值查询",             "test_boundary_queries"),
+    "14": ("库位后退指令",           "test_cabinet_backward"),
+    "15": ("出库批次数量下发",        "test_outbound_batch_count"),
+    "16": ("出库完成标志读取/清除",   "test_outbound_complete_flag"),
 }
 
 
@@ -81,10 +133,13 @@ def main():
     service.start_connects()
     print("连接成功")
 
-    if len(sys.argv) > 1:
-        service.start_status_polling(interval=0.3)
-        time.sleep(1)
-        try:
+    print("启动状态轮询...")
+    service.start_status_polling(interval=0.3)
+    time.sleep(1)
+    print("轮询已启动")
+
+    try:
+        if len(sys.argv) > 1:
             arg = sys.argv[1]
             if arg == "a":
                 run_all(service)
@@ -94,60 +149,45 @@ def main():
                 run_test(service, func_name)
             else:
                 print(f"无效参数: {arg}")
-        except Exception as e:
-            print(f"  FAIL: {e}")
-        finally:
-            service.stop_status_polling()
-            service.close()
-            print("PLC连接已关闭")
-        return
+            return
 
-    while True:
-        show_menu()
-        choice = input("请选择测试项: ").strip().lower()
+        while True:
+            show_menu()
+            choice = input("请选择测试项: ").strip().lower()
 
-        if choice == "q":
-            break
+            if choice == "q":
+                break
 
-        if choice == "a":
-            service.start_status_polling(interval=0.3)
-            time.sleep(1)
-            try:
+            if choice == "a":
                 run_all(service)
-            finally:
-                service.stop_status_polling()
-            continue
+                continue
 
-        if choice in TEST_FUNCTIONS:
-            desc, func_name = TEST_FUNCTIONS[choice]
-            service.start_status_polling(interval=0.3)
-            time.sleep(1)
-            print(f"\n>>> 运行测试 [{choice}] {desc}")
-            try:
-                run_test(service, func_name)
-            except Exception as e:
-                print(f"  FAIL: {e}")
-            finally:
-                service.stop_status_polling()
-            continue
+            if choice in TEST_FUNCTIONS:
+                desc, func_name = TEST_FUNCTIONS[choice]
+                print(f"\n>>> 运行测试 [{choice}] {desc}")
+                try:
+                    run_test(service, func_name)
+                except Exception as e:
+                    print(f"  FAIL: {e}")
+                continue
 
-        print("无效选择，请重新输入")
-
-    service.close()
-    print("PLC连接已关闭, 退出")
+            print("无效选择，请重新输入")
+    finally:
+        service.close()
+        print("PLC连接已关闭, 退出")
 
 
 def test_read_registers(service: PLC_Service):
     print("=" * 60)
-    print("读取寄存器")
+    print("读取寄存器 (详细信息已写入日志)")
 
-    regs = service._plc_client.read_holding_registers(0, 18)
-    print(f"  控制区 D0~D17: {regs}")
+    regs = service._plc_client.read_holding_registers(RegisterRange.CTRL_START, RegisterRange.CTRL_COUNT)
+    print_registers(regs, RegisterRange.CTRL_START, CTRL_NAMES, "控制区")
 
-    regs = service._plc_client.read_holding_registers(100, 10)
-    print(f"  状态区 D100~D109: {regs}")
+    regs = service._plc_client.read_holding_registers(RegisterRange.STATUS_START, RegisterRange.STATUS_COUNT)
+    print_registers(regs, RegisterRange.STATUS_START, STATUS_NAMES, "状态区")
 
-    print("  PASS")
+    print("\n  PASS")
 
 
 def test_write_read_back(service: PLC_Service):
@@ -229,7 +269,10 @@ def test_batch_gripper(service: PLC_Service):
             "gripper_id": gripper_id, "layer": layer,
             "count": count, "size": size, "place_count": place_count,
         })
-    print(f"  批量夹爪指令: {commands}")
+    print(f"  即将发送 {len(commands)} 条夹爪指令:")
+    for i, cmd in enumerate(commands, 1):
+        print(f"    [{i}] gripper_id={cmd['gripper_id']}, layer={cmd['layer']}, "
+              f"count={cmd['count']}, size={cmd['size']}, place_count={cmd['place_count']}")
     result = service.command_gripper_batch(commands, delay_before_pos=0.6)
     assert result is True
     print("  PASS")
@@ -354,6 +397,56 @@ def test_boundary_queries(service: PLC_Service):
     assert service.is_cabinet_timeout(1, 0) is False
     print("  非法层号 -> False OK")
 
+    print("  PASS")
+
+
+def test_cabinet_backward(service: PLC_Service):
+    print("=" * 60)
+    layer = input_int(f"  输入层号 [1~4] (默认1): ", 1)
+    print(f"  工作站{STATION_ID} {layer}层库位后退指令")
+    result = service.command_cabinet_backward(station_id=STATION_ID, layer=layer)
+    assert result is True
+    print(f"  {layer}层: OK")
+    print("  PASS")
+
+
+def test_outbound_batch_count(service: PLC_Service):
+    print("=" * 60)
+    count = input_int("  输入每批次出库数量 [1~6] (默认1): ", 1)
+    print(f"  下发每批次鞋盒出库数量: {count}")
+    result = service.command_outbound_batch_count(count=count)
+    assert result is True
+
+    regs = service._plc_client.read_holding_registers(OutboundAddr.BATCH_COUNT, 1)
+    assert regs[0] == count, f"回读值不符: {regs[0]}"
+    print(f"  回读验证: D63 = {regs[0]}")
+
+    try:
+        service.command_outbound_batch_count(count=0)
+        assert False, "count=0 应抛异常"
+    except ParameterError:
+        print("  count=0 -> ParameterError OK")
+
+    try:
+        service.command_outbound_batch_count(count=7)
+        assert False, "count=7 应抛异常"
+    except ParameterError:
+        print("  count=7 -> ParameterError OK")
+
+    print("  PASS")
+
+
+def test_outbound_complete_flag(service: PLC_Service):
+    print("=" * 60)
+    print("  清除出库完成标志")
+    result = service.clear_outbound_complete()
+    assert result is True
+
+    time.sleep(0.3)
+    flag = service.read_outbound_complete()
+    print(f"  当前出库完成标志: {flag}")
+    assert flag is False
+    print("  清除后标志为 False OK")
     print("  PASS")
 
 

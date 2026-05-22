@@ -3,6 +3,7 @@ from src.business.state_machine import StateMachine, StationState
 from src.business.strategy import strategy
 from src.business.task_manager import TaskManager, QueueTask
 from src.models.containers import CabinetStore
+from src.models.outbound_plan_model import OutboundPlan
 
 from src.utils.logger import logger
 
@@ -212,23 +213,24 @@ class Task_Processing:
     def _outbound_task_processing(self, queuetask: QueueTask) -> None:
         
         # 将任务放入出库策略当中进行计算，得出Outboundplan
-
-
-        self.strategy
-        
+        outboundplan = strategy(queuetask, self.cabinet_store)
         
         # 将任务从准备队列转移至正在执行中
         self.taskmanger.remove_pending(queuetask.task_id)
         self.taskmanger.add_to_running(queuetask)
         
+        self.state_machine.transition(queuetask.task.station_id, StationState.OUTBOUND, reason="进行出库任务")
 
         # 按照Outboundplan计划执行任务
-        self._execute_plan(Outboundplan)
-
-
+        self._execute_plan(outboundplan)
 
         self.taskmanger.complete_task()
+        self.state_machine.transition(queuetask.task.station_id, StationState.DONE, reason="任务完成")
 
     def stop(self) -> None:
         self._stop_event.set()
         logger.info("任务处理已停止")
+
+    
+    def _excute_plan(self, outboundplan: OutboundPlan) -> None:
+        

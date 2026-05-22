@@ -1,11 +1,11 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from collections import Counter
 
 if TYPE_CHECKING:
     from src.business.task_manager import QueueTask
-    
+
 from src.utils.logger import logger
 from src.models.containers import CabinetStore, SlotInfo
 from src.models.outbound_plan_model import OutboundPlan, OutboundBatch, PackageSegment, StationBatchPlan, GripperAction, PlacedItem
@@ -18,6 +18,8 @@ MAX_GRIPPER_COUNT = 4
 FRONT_POSITIONS = (1, 2)
 BACK_POSITIONS = (3, 4)
 BACK_TO_FRONT_POSITION = {3: 1, 4: 2}
+STATION_CODES = ("A", "B", "C")
+LOCAL_GRIPPER_IDS = (1, 2)
 
 
 # 策略算法内部用的库位级取货计划
@@ -28,7 +30,7 @@ class SlotPick:
     location_code: str          # 库位的编号
     station_code: str           # 工作站编号
     station_id: int             # 工作站id
-    gripper_id: int             # 工作站内夹爪id
+    local_gripper_id: int       # 工作站内夹爪id，A/B/C 每个工作站内部都只有 1、2 号夹爪
     global_gripper_id: int      # 全局夹爪id
     gripper_side: str           # 夹爪方向
     layer: int                  # 库位层数
@@ -47,16 +49,15 @@ class PackagePlanInfo:
     station_codes: list[str]    # 涉及的工作站
     is_cross_station: bool      # 是否跨越工作站
     is_multi_slot: bool         # 是否涉及多个库位
-    warnings: list[str] = field(default_factory=list)   # 保存这个包裹计算过程中的警告
 
 
 # 根据 QueueTask 和当前库位库存生成出库计划
 def strategy(queuetask: QueueTask, cabinet_store: CabinetStore) -> OutboundPlan:
     task = queuetask.task
-    warnings: list[str] = []
 
-    package_infos = build_package_infos(task.packages, cabinet_store, warnings)
-    package_infos = sort_package_infos(package_infos)
+    # build_package_infos() 会在模拟库存里动态选择“当前可出”的包裹，
+    # 返回值已经是最终计划顺序；这里不要再二次排序，否则会破坏后排补位后的顺序。
+    package_infos = build_package_infos(task.packages, cabinet_store)
     batches = build_batches(package_infos)
     package_segments = build_package_segments(package_infos, batches)
 
@@ -67,7 +68,6 @@ def strategy(queuetask: QueueTask, cabinet_store: CabinetStore) -> OutboundPlan:
         total_goods=sum(len(package.goods) for package in task.packages),
         batches=batches,
         package_segments=package_segments,
-        warnings=warnings,
     )
 
     validate_plan(plan, cabinet_store)
@@ -75,81 +75,106 @@ def strategy(queuetask: QueueTask, cabinet_store: CabinetStore) -> OutboundPlan:
 
 
 # 把包裹需求转换成PackagePlanInfo
-def build_package_infos(packages: list[Package], cabinet_store: CabinetStore, warnings: list[str]) -> list[PackagePlanInfo]:
-
-    reserved_depth: dict[str, int] = {}
+def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) -> list[PackagePlanInfo]:
+    # 不直接修改真实 CabinetStore，在内存里维护一份模拟库存
+    # 后续每计划一个包裹，就从模拟库存里扣掉已经放到流水线的货物
+    simulated_inventory = build_simulated_inventory_from_store(cabinet_store)
+    pending_packages = list(packages)
     package_infos: list[PackagePlanInfo] = []
+    last_target_line: str | None = None
+    same_line_batch_count = 0
     
-    for package in packages:
-        package_warnings: list[str] = []
-        slot_picks = choose_slots_for_package(
-            package = package,
-            cabinet_store = cabinet_store,
-            reserved_depth = reserved_depth,
-            warnings = package_warnings,
-        )
-        station_codes = sorted({slot_pick.station_code for slot_pick in slot_picks})
-        target_line = normalize_line(package.packaging_line, package.manual_process_type)
+    while pending_packages:
+        candidate_infos: list[PackagePlanInfo] = []
 
-        info = PackagePlanInfo(
-            package = package,
-            package_id = package.package_id,
-            target_line = target_line,
-            total_goods = len(package.goods),
-            slot_picks = slot_picks,
-            station_codes = station_codes,
-            is_cross_station = len(station_codes) > 1,
-            is_multi_slot = len(slot_picks) > 1,
-            warnings = package_warnings,
-        )
-        warnings.extend(package_warnings)
-        package_infos.append(info)
+        # 每一轮只挑“当前模拟库存下已经可直接出库”的包裹
+        for package in pending_packages:
+            slot_picks = choose_slots_for_package(
+                package = package,
+                simulated_inventory = simulated_inventory,
+                mutate_inventory = False,
+            )
+            if not slot_picks:
+                continue
+            candidate_infos.append(build_package_info(package, slot_picks))
+
+        if candidate_infos:
+            # 候选包裹之间再按规则 3、规则 12 等排序。
+            # 注意：这里排序的是“当前可出”的包裹，不会把被后排阻挡的包裹提前。
+            # 这一步是动态排序：先遵守前排必须先出的硬规则，再在可出包裹里应用业务优先级。
+            selected_info = choose_next_package_info(
+                candidate_infos = candidate_infos,
+                last_target_line = last_target_line,
+                same_line_batch_count = same_line_batch_count,
+            )
+            selected_package = selected_info.package
+            selected_slot_picks = choose_slots_for_package(
+                package = selected_package,
+                simulated_inventory = simulated_inventory,
+                mutate_inventory = True,
+            )
+            selected_info = build_package_info(selected_package, selected_slot_picks)
+            package_infos.append(selected_info)
+            pending_packages.remove(selected_package)
+
+            selected_batch_count = estimate_package_batch_count(selected_info)
+            if selected_info.target_line == last_target_line:
+                same_line_batch_count += selected_batch_count
+            else:
+                last_target_line = selected_info.target_line
+                same_line_batch_count = selected_batch_count
+            continue
+
+        # 当前没有任何包裹能直接出库时，尝试把已经清空前排的后排货物补位到 1、2 位。
+        if shift_back_goods_to_front(simulated_inventory):
+            continue
+
+        raise ValueError(build_unschedulable_message(pending_packages, simulated_inventory))
 
     return package_infos
 
 # 给包裹选择库位
 def choose_slots_for_package(package: Package,
-    cabinet_store: CabinetStore,
-    reserved_depth: dict[str, int],
-    warnings: list[str],
+    simulated_inventory: dict[str, list[str]],
+    mutate_inventory: bool,
 ) -> list[SlotPick]:
-    
+    # need 保存这个包裹还缺哪些 SKU。
+    # Counter 的值会随着已选中的 planned_goods 逐个扣减，扣到 0 后删除。
     need = Counter(package.goods)
     selected: list[SlotPick] = []
-    slots = sorted(
-        cabinet_store.get_all_slots(),
-        key = lambda slot: location_sort_key(slot.location_code),
-    )
+    selected_locations: list[tuple[str, int]] = []
+    location_codes = sorted(simulated_inventory.keys(), key = location_sort_key)
 
-    for slot in slots:
+    for location_code in location_codes:
         if not need:
             break
-        if slot.is_empty:
+        slot_goods = simulated_inventory.get(location_code, [])
+        if not slot_goods:
             continue
-        if slot.qty > MAX_GRIPPER_COUNT:
-            warnings.append(f"库位 {slot.location_code} 货物数量超过夹爪上限，已跳过")
+        if len(slot_goods) > MAX_GRIPPER_COUNT:
+            logger.info(f"库位 {location_code} 货物数量超过夹爪上限，已跳过")
             continue
         # 如果库位是夹爪取不到的，也就是在（3，4）位置上，跳过
-        if not is_reachable_slot(slot.location_code):
+        if not is_reachable_slot(location_code):
             continue
         
         # 从这个库位中挑出所需货物sku列表
         planned_goods = goods_needed_from_slot(
-            location_code = slot.location_code,
-            slot_goods = slot.goods,
+            location_code = location_code,
+            slot_goods = slot_goods,
             need = need,
-            reserved_depth = reserved_depth,
         )
 
         if not planned_goods:
             continue
 
+        # SlotPick 是“这个包裹使用这个库位的计划”。
+        # picked_goods 必须记录整个库位当前被夹起的货物，因为硬件每次都会整库位夹取；
+        # planned_goods 只记录本包裹本次真正要放到流水线上的货物数量。
+        slot = SlotInfo(location_code = location_code, goods = list(slot_goods))
         slot_pick = build_slot_pick(package, slot, planned_goods)
         selected.append(slot_pick)
-
-        reserved_depth[slot.location_code] = (
-            reserved_depth.get(slot.location_code, 0) + len(planned_goods)
-        )
+        selected_locations.append((location_code, len(planned_goods)))
 
         for sku in planned_goods:
             need[sku] -= 1
@@ -157,35 +182,368 @@ def choose_slots_for_package(package: Package,
                 del need[sku]
 
     if need:
-        blocked_back_locations = find_blocked_back_locations_for_need(need, cabinet_store, reserved_depth)
-        if blocked_back_locations:
-            raise ValueError(
-                f"包裹 {package.package_id} 所需货物当前在后排库位 {blocked_back_locations}，"
-                f"必须先出完同层 1、2 位货物，后排货物移动到前排后才能继续出库"
-            )
-        raise ValueError(f"包裹 {package.package_id} 库存不足: {dict(need)}")
+        return []
+
+    if mutate_inventory:
+        # 确认选择这个包裹后，才真正推进模拟库存。
+        # place_count 是 planned_goods 的数量，剩余未放完的货物会回到同一个前排库位。
+        # 因为只能放置底部连续货物，所以这里直接从列表头部扣掉 placed_count 个 SKU。
+        for location_code, placed_count in selected_locations:
+            simulated_inventory[location_code] = simulated_inventory[location_code][placed_count:]
 
     return selected
+
+def build_package_info(package: Package, slot_picks: list[SlotPick]) -> PackagePlanInfo:
+    station_codes = sorted({slot_pick.station_code for slot_pick in slot_picks})
+    target_line = normalize_line(package.packaging_line, package.manual_process_type)
+
+    return PackagePlanInfo(
+        package = package,
+        package_id = package.package_id,
+        target_line = target_line,
+        total_goods = len(package.goods),
+        slot_picks = slot_picks,
+        station_codes = station_codes,
+        is_cross_station = len(station_codes) > 1,
+        is_multi_slot = len(slot_picks) > 1,
+    )
+
+def build_simulated_inventory_from_store(cabinet_store: CabinetStore) -> dict[str, list[str]]:
+    simulated_inventory: dict[str, list[str]] = {}
+    for slot in cabinet_store.get_all_slots():
+        simulated_inventory[slot.location_code] = list(slot.goods)
+    return simulated_inventory
+
+def shift_back_goods_to_front(simulated_inventory: dict[str, list[str]]) -> bool:
+    moved = False
+    station_codes = sorted({location_code[0] for location_code in simulated_inventory})
+
+    for station_code in station_codes:
+        for layer in range(1, 5):
+            front_locations = [f"{station_code}{layer}{position}" for position in FRONT_POSITIONS]
+
+            # 这一层两个前排库位必须都清空，后排货物才允许整体补位。
+            # 只清空 A11 但 A12 仍有货时，A13/A14 都不能补位，这是机械结构硬规则。
+            if any(simulated_inventory.get(location_code, []) for location_code in front_locations):
+                continue
+
+            for back_position, front_position in BACK_TO_FRONT_POSITION.items():
+                back_location = f"{station_code}{layer}{back_position}"
+                front_location = f"{station_code}{layer}{front_position}"
+                back_goods = simulated_inventory.get(back_location, [])
+                if not back_goods:
+                    continue
+
+                simulated_inventory[front_location] = list(back_goods)
+                simulated_inventory[back_location] = []
+                moved = True
+                logger.info(f"模拟后排补位: {back_location} -> {front_location}, goods={back_goods}")
+
+    return moved
+
+def build_unschedulable_message(
+    pending_packages: list[Package],
+    simulated_inventory: dict[str, list[str]],
+) -> str:
+    package_ids = [package.package_id for package in pending_packages]
+    remaining_goods = {
+        location_code: goods
+        for location_code, goods in simulated_inventory.items()
+        if goods
+    }
+    return f"剩余包裹无法继续生成出库计划: packages={package_ids}, remaining_inventory={remaining_goods}"
 
 def sort_package_infos(package_infos: list[PackagePlanInfo]) -> list[PackagePlanInfo]:
     return sorted(package_infos, key = package_sort_key)
 
-def build_batches(sorted_infos):
-    pass
+def choose_next_package_info(
+    candidate_infos: list[PackagePlanInfo],
+    last_target_line: str | None,
+    same_line_batch_count: int,
+) -> PackagePlanInfo:
+    sorted_infos = sort_package_infos(candidate_infos)
 
-def build_package_segments(batchers):
-    pass
+    # 规则 5：如果已经连续三批都是同一条流水线，下一次尽量切到其他流水线。
+    # 这里的“下一次”只能发生在包裹边界，不能打断一个正在连续出库的多件包裹。
+    # 单件包裹会在 build_batches() 阶段合并成同一个批次，所以不能在这里用“单件包裹个数”
+    # 去提前判断三批同线，否则会把本来能同批出的单件包裹拆散。
+    if is_single_package_info(sorted_infos[0]):
+        return sorted_infos[0]
 
-def count_placed_items(batchers):
-    pass
+    if last_target_line is None or same_line_batch_count < 3:
+        return sorted_infos[0]
 
-def validate_plan(plan):
-    pass
+    for info in sorted_infos:
+        if info.target_line != last_target_line:
+            return info
+
+    return sorted_infos[0]
+
+def estimate_package_batch_count(info: PackagePlanInfo) -> int:
+    gripper_next_batch: dict[int, int] = {}
+    last_batch_no = 0
+
+    for slot_pick in info.slot_picks:
+        start_batch_no = gripper_next_batch.get(slot_pick.global_gripper_id, 1)
+        place_count = len(slot_pick.planned_goods)
+        if place_count <= 0:
+            continue
+        last_batch_no = max(last_batch_no, start_batch_no + place_count - 1)
+        gripper_next_batch[slot_pick.global_gripper_id] = start_batch_no + place_count
+
+    return last_batch_no
+
+def build_batches(sorted_infos: list[PackagePlanInfo]) -> list[OutboundBatch]:
+    batches: list[OutboundBatch] = []
+    next_batch_no = 1
+    next_sequence = 1
+    index = 0
+
+    while index < len(sorted_infos):
+        info = sorted_infos[index]
+
+        if is_single_package_info(info):
+            batch_line = info.target_line
+            same_line_infos: list[PackagePlanInfo] = []
+
+            # 单件包裹不需要独占批次。
+            # 这里先把同一条流水线的连续单件包裹收集起来，后面再按 6 个全局夹爪分批。
+            while index < len(sorted_infos):
+                candidate = sorted_infos[index]
+                if not is_single_package_info(candidate) or candidate.target_line != batch_line:
+                    break
+
+                same_line_infos.append(candidate)
+                index += 1
+
+            single_batches, next_batch_no, next_sequence = build_single_package_batches(
+                infos = same_line_infos,
+                start_batch_no = next_batch_no,
+                start_sequence = next_sequence,
+            )
+            batches.extend(single_batches)
+            continue
+
+        # 每个包裹从当前 next_batch_no / next_sequence 接着往后生成。
+        # 返回的新编号会被下一个包裹继续使用，从而保证整个任务批次和 sequence 全局连续。
+        package_batches, next_batch_no, next_sequence = build_batches_for_package(
+            info = info,
+            start_batch_no = next_batch_no,
+            start_sequence = next_sequence,
+        )
+        batches.extend(package_batches)
+        index += 1
+
+    return batches
+
+def is_single_package_info(info: PackagePlanInfo) -> bool:
+    return (
+        info.total_goods == 1
+        and len(info.slot_picks) == 1
+        and len(info.slot_picks[0].planned_goods) == 1
+    )
+
+def build_single_package_batches(
+    infos: list[PackagePlanInfo],
+    start_batch_no: int,
+    start_sequence: int,
+) -> tuple[list[OutboundBatch], int, int]:
+    batches: list[OutboundBatch] = []
+    pending_infos = list(infos)
+    batch_no = start_batch_no
+    next_sequence = start_sequence
+
+    while pending_infos:
+        batch_infos: list[PackagePlanInfo] = []
+        remaining_infos: list[PackagePlanInfo] = []
+        used_global_grippers: set[int] = set()
+
+        # 单件包裹合批时，业务上只要求目标流水线一致。
+        # 这里仍然按物理夹爪分批：同一批内同一个全局夹爪只能服务一个库位。
+        for info in pending_infos:
+            slot_pick = info.slot_picks[0]
+            if slot_pick.global_gripper_id in used_global_grippers:
+                remaining_infos.append(info)
+                continue
+
+            batch_infos.append(info)
+            used_global_grippers.add(slot_pick.global_gripper_id)
+
+        batch, batch_no, next_sequence = build_single_package_batch(
+            infos = batch_infos,
+            batch_no = batch_no,
+            start_sequence = next_sequence,
+        )
+        batches.append(batch)
+        pending_infos = remaining_infos
+
+    return batches, batch_no, next_sequence
+
+def build_single_package_batch(
+    infos: list[PackagePlanInfo],
+    batch_no: int,
+    start_sequence: int,
+) -> tuple[OutboundBatch, int, int]:
+    command_actions: list[GripperAction] = []
+
+    for info in infos:
+        slot_pick = info.slot_picks[0]
+        action = create_gripper_action(
+            slot_pick = slot_pick,
+            current_slot_goods = slot_pick.picked_goods,
+            batch_no = batch_no,
+            start_sequence = 0,
+        )
+        command_actions.append(action)
+
+    next_sequence = renumber_placed_items(command_actions, start_sequence)
+    batch = empty_batch(
+        batch_no = batch_no,
+        target_line = batch_target_line(infos),
+        exclusive = False,
+        exclusive_package_id = None,
+        package_ids = [info.package_id for info in infos],
+    )
+    attach_actions_to_batch(batch, command_actions)
+    fill_idle_actions(batch)
+    update_batch_sequence_range(batch)
+
+    return batch, batch_no + 1, next_sequence
+
+def batch_target_line(infos: list[PackagePlanInfo]) -> str | None:
+    target_lines = {info.target_line for info in infos if info.target_line}
+    if not target_lines:
+        return None
+    if len(target_lines) == 1:
+        return next(iter(target_lines))
+    return "MIXED"
+
+def build_batches_for_package(
+    info: PackagePlanInfo,
+    start_batch_no: int,
+    start_sequence: int,
+) -> tuple[list[OutboundBatch], int, int]:
+    command_actions: list[GripperAction] = []
+    gripper_next_batch: dict[int, int] = {}
+
+    if not info.slot_picks:
+        return [], start_batch_no, start_sequence
+
+    for slot_pick in info.slot_picks:
+        # 同一个全局夹爪如果连续服务同一个包裹的多个库位，后一个库位必须等前一个
+        # place_count 对应的连续批次都放完后才能再发新的取货命令。
+        command_batch_no = gripper_next_batch.get(slot_pick.global_gripper_id, start_batch_no)
+        action = create_gripper_action(
+            slot_pick = slot_pick,
+            current_slot_goods = slot_pick.picked_goods,
+            batch_no = command_batch_no,
+            start_sequence = 0,
+        )
+        command_actions.append(action)
+        gripper_next_batch[slot_pick.global_gripper_id] = command_batch_no + action.place_count
+
+    next_sequence = renumber_placed_items(command_actions, start_sequence)
+    last_batch_no = max(
+        (
+            item.place_batch_no
+            for action in command_actions
+            for item in action.placed_items
+        ),
+        default = start_batch_no,
+    )
+
+    package_batches: list[OutboundBatch] = []
+    for batch_no in range(start_batch_no, last_batch_no + 1):
+        # 当前实现按包裹连续生成批次，避免一个包裹的连续段中被其他包裹插入。
+        # 这比最大化并行利用率保守，但更容易严格满足连续出库和跨工作站包裹独占规则。
+        batch = empty_batch(
+            batch_no = batch_no,
+            target_line = info.target_line,
+            exclusive = should_keep_package_exclusive(info),
+            exclusive_package_id = info.package_id if should_keep_package_exclusive(info) else None,
+            package_ids = [info.package_id],
+        )
+        attach_actions_to_batch(batch, command_actions)
+        fill_idle_actions(batch)
+        update_batch_sequence_range(batch)
+        package_batches.append(batch)
+
+    return package_batches, last_batch_no + 1, next_sequence
+
+def build_package_segments(
+    package_infos: list[PackagePlanInfo],
+    batches: list[OutboundBatch],
+) -> list[PackageSegment]:
+    info_by_id = {info.package_id: info for info in package_infos}
+    package_items: dict[str, list[PlacedItem]] = {}
+    package_batches: dict[str, set[int]] = {}
+
+    # 先从批次反查每个包裹实际落线了哪些货，以及这些货分布在哪些批次里。
+    # PackageSegment 不参与 PLC 控制，它的价值是让执行层和校验层能快速确认包裹是否连续。
+    for batch in batches:
+        for station_plan in batch.station_plans:
+            for action in station_plan.actions:
+                for item in action.placed_items:
+                    package_items.setdefault(item.package_id, []).append(item)
+                    package_batches.setdefault(item.package_id, set()).add(batch.batch_no)
+
+    segments: list[PackageSegment] = []
+    for package_id, items in package_items.items():
+        info = info_by_id[package_id]
+        sequences = sorted(item.sequence for item in items)
+        batch_numbers = sorted(package_batches[package_id])
+
+        segments.append(
+            PackageSegment(
+                package_id = package_id,
+                target_line = info.target_line,
+                total_goods = len(items),
+                batch_start = batch_numbers[0],
+                batch_end = batch_numbers[-1],
+                sequence_start = sequences[0],
+                sequence_end = sequences[-1],
+                station_codes = list(info.station_codes),
+                exclusive = should_keep_package_exclusive(info),
+            )
+        )
+
+    segments.sort(key = lambda segment: segment.sequence_start)
+    return segments
+
+def count_placed_items(batches: list[OutboundBatch]) -> int:
+    # placed_items 才代表真正放到流水线上的货物。
+    # picked_goods 不能用于计数，因为夹爪可能夹起 4 个但本次只放 1 到 4 个中的一部分。
+    return sum(
+        len(action.placed_items)
+        for batch in batches
+        for station_plan in batch.station_plans
+        for action in station_plan.actions
+    )
+
+def validate_plan(plan: OutboundPlan, cabinet_store: CabinetStore) -> None:
+    # cabinet_store 当前保留在签名里，方便后续补充“计划是否仍匹配当前库存”的交叉校验。
+    # 现在这里先做不依赖外部状态的结构校验和规则校验。
+    check_batch_shape(plan)
+    check_batch_outbound_count(plan)
+    check_action_counts(plan)
+    check_location_layer_consistency(plan)
+    check_station_target_line(plan)
+    check_sequence_continuous(plan)
+    check_package_segments(plan)
+
+    if count_placed_items(plan.batches) != plan.total_goods:
+        raise ValueError("计划出库货物数量和任务货物数量不一致")
 
 # 创建空批次
-def empty_batch(batch_no: int, target_line: str | None, reason: str) -> OutboundBatch:
+def empty_batch(
+    batch_no: int,
+    target_line: str | None,
+    exclusive: bool = False,
+    exclusive_package_id: str | None = None,
+    package_ids: list[str] | None = None,
+) -> OutboundBatch:
     station_plans = []
-    for station_code in ("A", "B", "C"):
+    for station_code in STATION_CODES:
         station_id = station_id_from_code(station_code)
         station_plans.append(
             StationBatchPlan(
@@ -199,10 +557,9 @@ def empty_batch(batch_no: int, target_line: str | None, reason: str) -> Outbound
     return OutboundBatch(
         batch_no=batch_no,
         target_line=target_line,
-        exclusive=False,
-        exclusive_package_id=None,
-        package_ids=[],
-        reason=reason,
+        exclusive=exclusive,
+        exclusive_package_id=exclusive_package_id,
+        package_ids=list(package_ids or []),
         station_plans=station_plans,
     )
 
@@ -213,6 +570,8 @@ def create_gripper_action(
     batch_no: int,
     start_sequence: int,
 ) -> GripperAction:
+    # current_slot_goods 是计划生成时模拟出来的“动作执行到这一刻库位上剩余货物”。
+    # 夹爪会整库位夹起它们，但只能把底部连续的 planned_goods 放上流水线。
     place_goods = current_slot_goods[: len(slot_pick.planned_goods)]
     if place_goods != slot_pick.planned_goods:
         raise ValueError("planned_goods 必须等于当前库位底部连续可放置货物")
@@ -233,7 +592,7 @@ def create_gripper_action(
         action_type="pick",
         station_id=slot_pick.station_id,
         station_code=slot_pick.station_code,
-        gripper_id=slot_pick.gripper_id,
+        local_gripper_id=slot_pick.local_gripper_id,
         global_gripper_id=slot_pick.global_gripper_id,
         gripper_side=slot_pick.gripper_side,
         layer=slot_pick.layer,
@@ -245,14 +604,229 @@ def create_gripper_action(
         picked_goods=list(current_slot_goods),
         placed_items=placed_items,
         target_line=slot_pick.target_line,
-        reason="整库位夹取，按 place_count 连续批次放置",
+        send_to_plc=True,
     )
+
+def attach_actions_to_batch(batch: OutboundBatch, command_actions: list[GripperAction]) -> None:
+    for command in command_actions:
+        placed_items = [
+            item
+            for item in command.placed_items
+            if item.place_batch_no == batch.batch_no
+        ]
+        if not placed_items:
+            continue
+
+        action = clone_action_for_batch(command, batch.batch_no, placed_items)
+        station_plan = batch.station_plans[action.station_id - 1]
+        station_plan.actions.append(action)
+        station_plan.target_line = action.target_line
+
+def clone_action_for_batch(
+    command: GripperAction,
+    batch_no: int,
+    placed_items: list[PlacedItem],
+) -> GripperAction:
+    is_command_batch = batch_no == command.batch_no
+
+    # 一个 PLC 取货命令可能覆盖多个连续批次：
+    # 第一个批次 send_to_plc=True，执行层真正下发 pick/place_count；
+    # 后续批次只保留 placed_items 轨迹，表示同一次夹取的第 2、3、4 个货物分别在哪些批次落线。
+    return GripperAction(
+        action_type = "pick",
+        station_id = command.station_id,
+        station_code = command.station_code,
+        local_gripper_id = command.local_gripper_id,
+        global_gripper_id = command.global_gripper_id,
+        gripper_side = command.gripper_side,
+        layer = command.layer,
+        location_code = command.location_code,
+        picked_count = command.picked_count,
+        place_count = command.place_count,
+        size = command.size,
+        batch_no = batch_no,
+        target_line = command.target_line,
+        picked_goods = list(command.picked_goods),
+        placed_items = list(placed_items),
+        send_to_plc = is_command_batch,
+    )
+
+def fill_idle_actions(batch: OutboundBatch) -> None:
+    for station_plan in batch.station_plans:
+        used_grippers = {action.local_gripper_id for action in station_plan.actions}
+        for gripper_id in LOCAL_GRIPPER_IDS:
+            if gripper_id in used_grippers:
+                continue
+            station_plan.actions.append(
+                idle_action(
+                    batch_no = batch.batch_no,
+                    station_id = station_plan.station_id,
+                    station_code = station_plan.station_code,
+                    gripper_id = gripper_id,
+                )
+            )
+        station_plan.actions.sort(key = lambda action: action.local_gripper_id)
+
+def idle_action(
+    batch_no: int,
+    station_id: int,
+    station_code: str,
+    gripper_id: int,
+) -> GripperAction:
+    return GripperAction(
+        action_type = "idle",
+        station_id = station_id,
+        station_code = station_code,
+        local_gripper_id = gripper_id,
+        global_gripper_id = global_gripper_id(station_id, gripper_id),
+        gripper_side = gripper_side(gripper_id),
+        layer = None,
+        location_code = None,
+        picked_count = 0,
+        place_count = 0,
+        size = None,
+        batch_no = batch_no,
+        target_line = None,
+        picked_goods = [],
+        placed_items = [],
+        send_to_plc = False,
+    )
+
+def update_batch_sequence_range(batch: OutboundBatch) -> None:
+    sequences = [
+        item.sequence
+        for station_plan in batch.station_plans
+        for action in station_plan.actions
+        for item in action.placed_items
+    ]
+    batch.outbound_count = len(sequences)
+    if not sequences:
+        batch.sequence_start = None
+        batch.sequence_end = None
+        return
+
+    batch.sequence_start = min(sequences)
+    batch.sequence_end = max(sequences)
+
+def renumber_placed_items(actions: list[GripperAction], start_sequence: int) -> int:
+    # sequence 是整个任务级别的真实落线顺序。
+    # 同一批次内按工作站、夹爪编号排序，保证序号稳定、可复现。
+    ordered_items = [
+        (item.place_batch_no, action.station_id, action.local_gripper_id, item)
+        for action in actions
+        for item in action.placed_items
+    ]
+    ordered_items.sort(key = lambda value: (value[0], value[1], value[2]))
+
+    sequence = start_sequence
+    for _, _, _, item in ordered_items:
+        item.sequence = sequence
+        sequence += 1
+
+    return sequence
+
+def check_batch_shape(plan: OutboundPlan) -> None:
+    for batch in plan.batches:
+        if len(batch.station_plans) != len(STATION_CODES):
+            raise ValueError(f"批次 {batch.batch_no} 工作站数量不正确")
+
+        for station_plan in batch.station_plans:
+            if len(station_plan.actions) != len(LOCAL_GRIPPER_IDS):
+                raise ValueError(f"批次 {batch.batch_no} 工作站 {station_plan.station_code} 夹爪数量不正确")
+
+def check_batch_outbound_count(plan: OutboundPlan) -> None:
+    for batch in plan.batches:
+        actual_count = sum(
+            len(action.placed_items)
+            for station_plan in batch.station_plans
+            for action in station_plan.actions
+        )
+        if batch.outbound_count != actual_count:
+            raise ValueError(
+                f"批次 {batch.batch_no} outbound_count 不正确，"
+                f"模型值 {batch.outbound_count}，实际落线数量 {actual_count}"
+            )
+
+def check_action_counts(plan: OutboundPlan) -> None:
+    for action in all_actions(plan):
+        if action.action_type == "idle":
+            if action.picked_count != 0 or action.place_count != 0:
+                raise ValueError("空置动作的 picked_count/place_count 必须为 0")
+            if action.picked_goods or action.placed_items:
+                raise ValueError("空置动作不能包含货物记录")
+            continue
+
+        if not 1 <= action.picked_count <= MAX_GRIPPER_COUNT:
+            raise ValueError(f"{action.location_code} picked_count 超出夹爪上限")
+        if not 0 <= action.place_count <= action.picked_count:
+            raise ValueError(f"{action.location_code} place_count 必须在 0 到 picked_count 之间")
+        if action.picked_count != len(action.picked_goods):
+            raise ValueError(f"{action.location_code} picked_count 必须等于 picked_goods 数量")
+        if len(action.placed_items) > 1:
+            raise ValueError(f"{action.location_code} 同一夹爪同一批次最多只能放置 1 个货物")
+        if len(action.placed_items) > action.place_count:
+            raise ValueError(f"{action.location_code} 当前批次 placed_items 数量不能超过 place_count")
+
+def check_location_layer_consistency(plan: OutboundPlan) -> None:
+    for action in all_actions(plan):
+        if action.action_type == "idle":
+            continue
+        if action.location_code is None or action.layer is None:
+            raise ValueError("取货动作必须有 location_code 和 layer")
+
+        station_code, layer, position = CabinetStore.parse_location(action.location_code)
+        expected_position = reachable_position_from_local_gripper(action.local_gripper_id)
+
+        if station_code != action.station_code:
+            raise ValueError(f"{action.location_code} 工作站和 action.station_code 不一致")
+        if layer != action.layer:
+            raise ValueError(f"{action.location_code} 层号和 action.layer 不一致")
+        if position != expected_position:
+            raise ValueError(f"{action.location_code} 不在夹爪 {action.local_gripper_id} 的固定可达位置")
+
+def check_station_target_line(plan: OutboundPlan) -> None:
+    for batch in plan.batches:
+        for station_plan in batch.station_plans:
+            target_lines = {
+                action.target_line
+                for action in station_plan.actions
+                if action.action_type == "pick" and action.target_line
+            }
+            if len(target_lines) > 1:
+                raise ValueError(f"批次 {batch.batch_no} 工作站 {station_plan.station_code} 出现多条目标线")
+
+def check_sequence_continuous(plan: OutboundPlan) -> None:
+    sequences = sorted(
+        item.sequence
+        for action in all_actions(plan)
+        for item in action.placed_items
+    )
+    if not sequences:
+        return
+
+    expected = list(range(1, len(sequences) + 1))
+    if sequences != expected:
+        raise ValueError(f"全局出库 sequence 不连续，实际 {sequences}，期望 {expected}")
+
+def check_package_segments(plan: OutboundPlan) -> None:
+    for segment in plan.package_segments:
+        expected_total = segment.sequence_end - segment.sequence_start + 1
+        if expected_total != segment.total_goods:
+            raise ValueError(f"包裹 {segment.package_id} segment 数量不一致")
+
+def all_actions(plan: OutboundPlan) -> list[GripperAction]:
+    return [
+        action
+        for batch in plan.batches
+        for station_plan in batch.station_plans
+        for action in station_plan.actions
+    ]
 
 # 构建SlotPick
 def build_slot_pick(package: Package, slot: SlotInfo, planned_goods: list[str]) -> SlotPick:
     station_code, layer, position = CabinetStore.parse_location(slot.location_code)
     station_id = station_id_from_code(station_code)
-    gripper_id = gripper_id_from_position(position)
+    local_gripper_id = gripper_id_from_position(position)
 
     return SlotPick(
         package_id = package.package_id,
@@ -260,9 +834,9 @@ def build_slot_pick(package: Package, slot: SlotInfo, planned_goods: list[str]) 
         location_code = slot.location_code,
         station_code = station_code,
         station_id = station_id,
-        gripper_id = gripper_id,
-        global_gripper_id = global_gripper_id(station_id, gripper_id),
-        gripper_side = gripper_side(gripper_id),
+        local_gripper_id = local_gripper_id,
+        global_gripper_id = global_gripper_id(station_id, local_gripper_id),
+        gripper_side = gripper_side(local_gripper_id),
         layer = layer,
         picked_goods = list(slot.goods),
         planned_goods = list(planned_goods),
@@ -273,13 +847,11 @@ def goods_needed_from_slot(
     location_code: str,
     slot_goods: list[str], # 货物sku列表
     need: Counter[str],
-    reserved_depth: dict[str, int],
 ) -> list[str]:
-    
-    start_index = reserved_depth.get(location_code, 0)
-    if start_index > len(slot_goods):
-        raise ValueError(f"库位 {location_code} 预占深度超过库存数量")
-    available_stack = slot_goods[start_index:]
+    # 这里不能在库位里“跳着拿”SKU。
+    # 如果库位是 [A, A, B]，包裹只需要 B，算法必须返回 []，
+    # 因为夹爪放货时只能先放最底部/最前面的 A，不能直接放中间或后面的 B。
+    available_stack = list(slot_goods)
     local_need = need.copy()
     planned_goods: list[str] = []
 
@@ -322,47 +894,6 @@ def is_reachable_slot(location_code: str) -> bool:
 def is_back_slot(location_code: str) -> bool:
     _, _, position = CabinetStore.parse_location(location_code)
     return position in BACK_POSITIONS
-
-# 判断同一工作站同一层的前排 1、2 位是否还有未计划出完的货物
-def layer_front_has_remaining_goods(
-    cabinet_store: CabinetStore,
-    station_code: str,
-    layer: int,
-    reserved_depth: dict[str, int],
-) -> bool:
-    for position in FRONT_POSITIONS:
-        location_code = f"{station_code}{layer}{position}"
-        slot = cabinet_store.get_slot(location_code)
-        if slot is None:
-            continue
-        planned_count = reserved_depth.get(location_code, 0)
-        if planned_count < slot.qty:
-            return True
-    return False
-
-# 查找当前需求中是否有被同层前排货物挡住的后排库位
-def find_blocked_back_locations_for_need(
-    need: Counter[str],
-    cabinet_store: CabinetStore,
-    reserved_depth: dict[str, int],
-) -> list[str]:
-    blocked_locations: list[str] = []
-
-    for slot in sorted(cabinet_store.get_all_slots(), key=lambda item: location_sort_key(item.location_code)):
-        if slot.is_empty:
-            continue
-        if not is_back_slot(slot.location_code):
-            continue
-
-        station_code, layer, _ = CabinetStore.parse_location(slot.location_code)
-        if not layer_front_has_remaining_goods(cabinet_store, station_code, layer, reserved_depth):
-            continue
-
-        remaining_goods = slot.goods[reserved_depth.get(slot.location_code, 0):]
-        if any(need.get(sku, 0) > 0 for sku in remaining_goods):
-            blocked_locations.append(slot.location_code)
-
-    return blocked_locations
 
 # 夹爪对应夹取库位，工作站内编号为1的夹爪只能夹取库位靠近机械臂左边的货物，为2的夹爪只能夹取库位靠近机械臂右边的货物
 def reachable_position_from_local_gripper(local_gripper_id: int) -> int:
@@ -436,6 +967,9 @@ def line_priority(target_line: str) -> int:
         "MO1": 5,
     }
     return priorities.get(target_line or "", 9)
+
+def should_keep_package_exclusive(info: PackagePlanInfo) -> bool:
+    return info.total_goods > 1 or info.is_cross_station or info.is_multi_slot
 
 # 转换夹爪编号，工作站(1,2) -> 全局(1,2,3,4,5,6)
 def global_gripper_id(station_id: int, gripper_id: int) -> int:

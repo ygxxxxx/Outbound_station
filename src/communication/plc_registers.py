@@ -73,8 +73,6 @@ class GripperAddr:
         return 32 + gripper_id  # 即 (gripper_id - 1) + 33
 
 
-
-
 # 库位传送带寄存器
 class CabinetCtrlAddr:
 
@@ -114,6 +112,20 @@ class CabinetCtrlAddr:
     WSC_L2_NO_BOX = 48
     WSC_L3_NO_BOX = 49
     WSC_L4_NO_BOX = 50
+
+    WSA_L1_BACK = 51   # 工作站A1层库位传送带后退
+    WSA_L2_BACK = 51   # 工作站A2层库位传送带后退
+    WSA_L3_BACK = 51   # 工作站A3层库位传送带后退
+    WSA_L4_BACK = 51   # 工作站A4层库位传送带后退
+    WSB_L1_BACK = 51   # 工作站B1层库位传送带后退
+    WSB_L2_BACK = 51   # 工作站B2层库位传送带后退
+    WSB_L3_BACK = 51   # 工作站B3层库位传送带后退
+    WSB_L4_BACK = 51   # 工作站B4层库位传送带后退
+    WSC_L1_BACK = 51   # 工作站C1层库位传送带后退
+    WSC_L2_BACK = 51   # 工作站C2层库位传送带后退
+    WSC_L3_BACK = 51   # 工作站C3层库位传送带后退
+    WSC_L4_BACK = 51   # 工作站C4层库位传送带后退
+
  
 
     # 通过工作站编号获取库位集体转动地址
@@ -137,6 +149,13 @@ class CabinetCtrlAddr:
         if not 1 <= layer <= 4:
             raise ParameterError(...)
         return 38 + (station_id - 1) * 4 + layer  
+    
+    @classmethod
+    def backward_addr(cls, station_id: int, layer: int) -> int:
+        cls._validate_station_id(station_id)
+        if not 1 <= layer <= 4:
+            raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
+        return 50 + (station_id - 1) * 4 + layer
     
     @classmethod
     def _validate_station_id(cls, station_id: int):
@@ -288,13 +307,16 @@ class StatusAddr:
             raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
         return 154 + (station_id - 1) * 4 + layer
 
+class OutboundAddr:
+    BATCH_COUNT = 63
+    COMPLETE_FLAG = 64
 
 # 全局地址区间 
 class RegisterRange:
 
     CTRL_START = 0           # 控制区起始地址
-    CTRL_END = 50            # 控制区结束地址
-    CTRL_COUNT = 51          # 控制区寄存器总数
+    CTRL_END = 64            # 控制区结束地址
+    CTRL_COUNT = 65          # 控制区寄存器总数
 
     STATUS_START = 100       # 状态区起始地址
     STATUS_END = 166         # 状态区结束地址
