@@ -24,6 +24,7 @@ logs/
 *.temp
 temp/
 
+src/docs/
 docs/*
 !docs/智能分拣软件的功能设计*.docx
 !docs/出库工作站上位机-视觉门通信协议*.pdf
