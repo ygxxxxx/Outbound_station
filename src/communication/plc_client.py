@@ -95,8 +95,8 @@ class PLC_Client:
     # 读取多个保持寄存器
     def read_holding_registers(self, address, count, slave=None) -> list:
         _slave = slave if slave is not None else self.slave_id
+        self._ensure_connection()
         with self._lock:
-            self._ensure_connection()
             try:
                 result = self._client.read_holding_registers(address, count=count, device_id=_slave)
                 if result.isError():
@@ -116,8 +116,8 @@ class PLC_Client:
     # 写入多个保持寄存器
     def write_holding_registers(self, address, values, slave=None) -> bool:
         _slave = slave if slave is not None else self.slave_id
+        self._ensure_connection()
         with self._lock:
-            self._ensure_connection()
             try:
                 result = self._client.write_registers(address, values, device_id=_slave)
                 if result.isError():
@@ -137,8 +137,8 @@ class PLC_Client:
     # 读取多个输入寄存器
     def read_input_registers(self, address, count, slave=None) -> list:
         _slave = slave if slave is not None else self.slave_id
+        self._ensure_connection()
         with self._lock:
-            self._ensure_connection()
             try:
                 result = self._client.read_input_registers(address, count=count, device_id=_slave)
                 if result.isError():
@@ -158,8 +158,8 @@ class PLC_Client:
     # 读取多个线圈状态
     def read_coils(self, address, count, slave=None) -> list:
         _slave = slave if slave is not None else self.slave_id
+        self._ensure_connection()
         with self._lock:
-            self._ensure_connection()
             try:
                 result = self._client.read_coils(address, count=count, device_id=_slave)
                 if result.isError():
@@ -179,8 +179,8 @@ class PLC_Client:
     # 写入单个线圈状态
     def write_coil(self, address, value, slave=None) -> bool:
         _slave = slave if slave is not None else self.slave_id
+        self._ensure_connection()
         with self._lock:
-            self._ensure_connection()
             try:
                 result = self._client.write_coil(address, value, device_id=_slave)
                 if result.isError():
@@ -200,8 +200,8 @@ class PLC_Client:
     # 写入多个线圈状态
     def write_coils(self, address, values, slave=None) -> bool:
         _slave = slave if slave is not None else self.slave_id
+        self._ensure_connection()
         with self._lock:
-            self._ensure_connection()
             try:
                 result = self._client.write_coils(address, values, device_id=_slave)
                 if result.isError():
@@ -221,8 +221,8 @@ class PLC_Client:
     # 读取多个离散输入状态
     def read_discrete_inputs(self, address, count, slave=None) -> list:
         _slave = slave if slave is not None else self.slave_id
+        self._ensure_connection()
         with self._lock:
-            self._ensure_connection()
             try:
                 result = self._client.read_discrete_inputs(address, count=count, device_id=_slave)
                 if result.isError():

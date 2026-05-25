@@ -320,13 +320,10 @@ def main():
                     _print_response("出库任务下发响应", resp)
 
             elif choice == "8":
-                station_id = _input("工作站编号 (A/B/C)", "A").upper()
-                layer_str = _input("层号 (1-4, 回车清除全部层)", "")
-                if layer_str:
-                    layer = int(layer_str) if layer_str.isdigit() else 1
-                    route_data = {"station_id": station_id, "layer": layer}
-                else:
-                    route_data = {"station_id": station_id}
+                route_data = {
+                    "clear_conveyor_timeout" : 1,
+                    "timestamp": int(time.time() * 1000),
+                }
                 resp = simulator.dispatch_inbound_route(route_data)
                 _print_response("解除超时响应", resp)
 

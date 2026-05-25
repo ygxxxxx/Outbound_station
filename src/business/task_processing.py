@@ -28,7 +28,6 @@ class Task_Processing:
 
         self._stop_event = threading.Event()
         
-        self.retry_count = 0
 
     def start(self):
         self._stop_event.clear()

@@ -17,6 +17,7 @@ class QueueTask:
         self.task = task
         self.start_time = None
         self.end_time = None
+        self.retry_count = 0
 
 class TaskManager:
     def __init__(self):
