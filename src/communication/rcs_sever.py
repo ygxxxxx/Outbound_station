@@ -138,6 +138,7 @@ class RCS_Sever:
         except Exception as e:
             logger.error(f"接收数据时发生错误:{e}")
         finally:
+            self.task_connected = False
             conn.close()
             logger.info(f"RCS状态接口连接已关闭{addr}")
             
@@ -175,6 +176,7 @@ class RCS_Sever:
         except Exception as e:
             logger.error(f"接收数据时发生错误:{e}")
         finally:
+            self.status_connected = False
             conn.close()
             logger.info(f"RCS任务接口连接已关闭{addr}")
 

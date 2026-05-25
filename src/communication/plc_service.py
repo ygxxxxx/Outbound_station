@@ -94,7 +94,8 @@ class PLC_Service:
                 raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(cmd.get("layer")))
             if not 1 <= cmd.get("count", 0) <= 4:
                 raise ParameterError(message="数量超出范围", expected_value="1~4", actual_value=str(cmd.get("count")))
-
+            if not 0 <= cmd.get("place_count", 0) <= cmd.get("count", 0):
+                raise ParameterError(message="放置数量超出范围", expected_value="0~count", actual_value=str(cmd.get("place_count", 0)))
             
             gid = cmd["gripper_id"]
             count_addr = GripperAddr.count_addr(gid)
@@ -235,7 +236,7 @@ class PLC_Service:
         result = self._plc_client.read_holding_registers(OutboundAddr.COMPLETE_FLAG, 1)
         return result[0] == 1
 
-    # 清楚出库完成标志，每次出库完成后，出库完成标志会置1，在发送下一批出库指令时需要把标志置1
+    # 清除出库完成标志，每次出库完成后，出库完成标志会置0，在发送下一批出库指令时需要把标志置1
     def clear_outbound_complete(self) -> bool:
         self._plc_client.write_holding_registers(OutboundAddr.COMPLETE_FLAG, [0])
         logger.info("已清除鞋盒出库完成标志")

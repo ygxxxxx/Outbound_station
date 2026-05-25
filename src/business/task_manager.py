@@ -55,15 +55,20 @@ class TaskManager:
             logger.debug(f"任务开始执行 taskid = {task.task_id}")
 
     # 任务完成状态切换，将已经完成的任务切换状态
-    def complete_task(self) -> None:
+    def complete_task(self, task_id: str) -> None:
         with self.rlock:
-            completed_keys = [key for key, t in self._task.items() if t.status == "completed"]
+            task = self._task.get(task_id)
+            if task is None:
+                logger.warning(f"complete_task 未找到任务: {task_id}")
+                return
+            if task.status == "executing":
+                task.status = "completed"
+                task.end_time = int(time.time() * 1000)
+                logger.info(f"任务完成: {task_id}")
+            # 清理已完成任务
+            completed_keys = [k for k, t in self._task.items() if t.status == "completed"]
             for key in completed_keys:
                 del self._task[key]
-            for key, t in self._task.items():
-                if t.status == "executing":
-                    t.status = "completed"
-                    t.end_time = (int(time.time() * 1000))
 
     # 查询任务执行状态
     def get_current_task_detail(self) -> dict:

@@ -97,7 +97,7 @@ def handle_status_request(state_machine: StateMachine, plc_service: PLC_Service,
 
 
 # 处理任务端口接收到的请求
-def handle_task_request(task_manager: TaskManager, state_machine: StateMachine, cmd: int, body_dict: dict) -> dict:
+def handle_task_request(task_manager: TaskManager, state_machine: StateMachine, plc_service: PLC_Service, cmd: int, body_dict: dict) -> dict:
     try:
         if cmd == CmdType.OUTBOUND_TASK_DISPATCH_REQ:               # 收到RCS下发的出库任务
             try:
@@ -114,8 +114,11 @@ def handle_task_request(task_manager: TaskManager, state_machine: StateMachine, 
             return build_common_response()
 
         elif cmd == CmdType.CLEAR_CONVEYOR_TIMEOUT_REQ:             # 收到RCS要求解除库位传送带运行超时指令
-            # 通过任务机解除PLC库位传送带超时报警
-            state_machine.clear_cabinet_timeout()
+            
+            plc_service.clear_all_cabinet_timeouts(1)
+            plc_service.clear_all_cabinet_timeouts(2)
+            plc_service.clear_all_cabinet_timeouts(3)
+            
             return build_common_response()
 
         else:

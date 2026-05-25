@@ -106,6 +106,9 @@ class CabinetStore:
         slot = self.get_slot(location_code)
         if not slot:
             return False
+        if slot.qty + len(goods_sku_list) > 4:
+            logger.error(f"{location_code}库位容量不足, 当前{slot.qty}, 尝试放入{len(goods_sku_list)}件")
+            return False
         for good_sku in goods_sku_list:
             if slot.qty < 4:
                 slot.add_good(good_sku)

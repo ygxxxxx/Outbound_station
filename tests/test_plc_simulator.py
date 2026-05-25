@@ -1,6 +1,6 @@
 
-from src.communication.plc_simulator import PLCSimulator
-from src.communication.plc_service import PLCService
+from tests.plc_simulator import PLCSimulator
+from src.communication.plc_service import PLC_Service 
 from src.communication.plc_client import PLC_Client
 import time
 

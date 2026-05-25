@@ -113,7 +113,7 @@ class TestCabinetStoreQuery:
 
     def test_get_all_slot(self):
         store = CabinetStore.create()
-        all_slots = store.get_all_slot()
+        all_slots = store.get_all_slots()
         assert len(all_slots) == 48
 
     def test_get_station_slot(self):

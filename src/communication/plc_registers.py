@@ -159,7 +159,7 @@ class CabinetCtrlAddr:
     def no_box_addr(cls, station_id: int, layer: int) -> int:
         cls._validate_station_id(station_id)
         if not 1 <= layer <= 4:
-            raise ParameterError(...)
+            raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
         return 38 + (station_id - 1) * 4 + layer  
     
     @classmethod

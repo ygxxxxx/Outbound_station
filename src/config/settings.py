@@ -121,7 +121,7 @@ def load_config(path="config/config.yaml"):
                 vg_address=visiongate_data.get(
                     "vg_address", VisionGateConfig.vg_address
                 ),
-                vg_port=VisionGateConfig.get(
+                vg_port=visiongate_data.get(
                     "vg_port", VisionGateConfig.vg_port
                 )
             )

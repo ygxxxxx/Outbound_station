@@ -12,6 +12,7 @@ import time
 
 logger = logger.bind(tag="Task_Processing")
 
+MAX_TASK_RETRY = 3
 
 class Task_Processing:
     def __init__(self,
@@ -26,6 +27,8 @@ class Task_Processing:
         self.cabinet_store = cabinet_store
 
         self._stop_event = threading.Event()
+        
+        self.retry_count = 0
 
     def start(self):
         self._stop_event.clear()
@@ -58,8 +61,14 @@ class Task_Processing:
                         queuetask)  # 如果是出库任务进出库任务处理函数
 
             except Exception as e:
-                logger.error(f"任务解析失败，留在队列中: {queuetask.task_id}, {e}")
-                self._stop_event.wait(timeout=5.0)  # 失败后等一会再重试
+                with self.taskmanager.rlock:
+                    queuetask.retry_count += 1
+                if queuetask.retry_count > MAX_TASK_RETRY:
+                    logger.error(f"任务重试超过{MAX_TASK_RETRY}次，从队列移除:{queuetask.task_id}")
+                    self.taskmanager.remove_pending(queuetask.task_id)
+                else:
+                    logger.warning(f"任务解析失败，第{queuetask.retry_count}次: ，留在队列中: {queuetask.task_id}, {e}")
+                self._stop_event.wait(timeout=5.0)
 
     @staticmethod
     def _parse_station_id(station_id_str: str) -> int:
@@ -225,7 +234,7 @@ class Task_Processing:
         # 任务执行完毕，修改任务机状态，将任务在任务管理器中的状态调整至完成
         self.state_machine.transition(
             station_id, StationState.DELIVERED, reason="放货完成")
-        self.taskmanager.complete_task()
+        self.taskmanager.complete_task(queuetask.task_id)
 
     def _outbound_task_processing(self, queuetask: QueueTask) -> None:
 
@@ -248,7 +257,7 @@ class Task_Processing:
                 queuetask.task.station_id, StationState.ERROR, reason="出库任务执行失败")
             raise
 
-        self.taskmanager.complete_task()
+        self.taskmanager.complete_task(queuetask.task_id)
         self.state_machine.transition(
             queuetask.task.station_id, StationState.DONE, reason="任务完成")
 

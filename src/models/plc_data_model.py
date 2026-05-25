@@ -330,33 +330,33 @@ class PLCStatusData:
             return result
 
     def to_rcs(self) -> dict:
+        with self._lock:
+            station_letters = {1: "A", 2: "B", 3: "C"}
+            station_status_list = []
 
-        station_letters = {1: "A", 2: "B", 3: "C"}
-        station_status_list = []
+            for sid in range(1, 4):
+                st = self._stations[sid]
+                left_gripper_idx = (sid - 1) * 2
+                right_gripper_idx = (sid - 1) * 2 + 1
+                station_status_list.append({
+                    "station_id": station_letters[sid],
+                    "left_gripper": self._grippers[left_gripper_idx].is_running,
+                    "right_gripper": self._grippers[right_gripper_idx].is_running,
+                    "level_1_conveyor_running": st.layers[0].is_conveyor_running,
+                    "level_2_conveyor_running": st.layers[1].is_conveyor_running,
+                    "level_3_conveyor_running": st.layers[2].is_conveyor_running,
+                    "level_4_conveyor_running": st.layers[3].is_conveyor_running,
+                    "level_1_conveyor_timeout_warning": st.layers[0].is_timeout,
+                    "level_2_conveyor_timeout_warning": st.layers[1].is_timeout,
+                    "level_3_conveyor_timeout_warning": st.layers[2].is_timeout,
+                    "level_4_conveyor_timeout_warning": st.layers[3].is_timeout,
+                    "left_gripper_retract_error": st.fault.left_stretch_fault,
+                    "left_gripper_lift_error": st.fault.left_lift_fault,
+                    "right_gripper_retract_error": st.fault.right_stretch_fault,
+                    "right_gripper_lift_error": st.fault.right_lift_fault,
+                })
 
-        for sid in range(1, 4):
-            st = self._stations[sid]
-            left_gripper_idx = (sid - 1) * 2
-            right_gripper_idx = (sid - 1) * 2 + 1
-            station_status_list.append({
-                "stataion_id": station_letters[sid],
-                "left_gripper": self._grippers[left_gripper_idx].is_running,
-                "right_gripper": self._grippers[right_gripper_idx].is_running,
-                "level_1_conveyor_running": st.layers[0].is_conveyor_running,
-                "level_2_conveyor_running": st.layers[1].is_conveyor_running,
-                "level_3_conveyor_running": st.layers[2].is_conveyor_running,
-                "level_4_conveyor_running": st.layers[3].is_conveyor_running,
-                "level_1_conveyor_timeout_warning": st.layers[0].is_timeout,
-                "level_2_conveyor_timeout_warning": st.layers[1].is_timeout,
-                "level_3_conveyor_timeout_warning": st.layers[2].is_timeout,
-                "level_4_conveyor_timeout_warning": st.layers[3].is_timeout,
-                "left_gripper_retract_error": st.fault.left_stretch_fault,
-                "left_gripper_lift_error": st.fault.left_lift_fault,
-                "right_gripper_retract_error": st.fault.right_stretch_fault,
-                "right_gripper_lift_error": st.fault.right_lift_fault,
-            })
-
-        return {
-            "emergency_stop": self._emergency_stop,
-            "stations_status":station_status_list,
-        }
+            return {
+                "emergency_stop": self._emergency_stop,
+                "stations_status":station_status_list,
+            }

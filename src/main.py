@@ -38,7 +38,7 @@ plc: PLC_Service = None
 plc_client: PLC_Client = None
 # vis: VisionGateClient = None
 state: StateMachine = None
-taskmanger: TaskManager = None
+taskmanager: TaskManager = None
 taskprocessing: Task_Processing = None
 cabinet_store: CabinetStore = None
 
@@ -60,7 +60,7 @@ def start():
     plc.start_status_polling()
 
     on_status = partial(handle_status_request, state, plc, cabinet_store)
-    on_task = partial(handle_task_request, taskmanager, state)
+    on_task = partial(handle_task_request, taskmanager, state, plc)
 
     rcs = RCS_Sever(
         status_host = "127.0.0.1",
