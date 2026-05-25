@@ -239,6 +239,7 @@ class Task_Processing:
 
         # 将任务放入出库策略当中进行计算，得出Outboundplan
         outboundplan = strategy(queuetask, self.cabinet_store)
+        self._log_outbound_plan_detail(outboundplan)
 
         # 将任务从准备队列转移至正在执行中
         self.taskmanager.remove_pending(queuetask.task_id)
@@ -263,6 +264,88 @@ class Task_Processing:
     def stop(self) -> None:
         self._stop_event.set()
         logger.info("任务处理已停止")
+
+    # 打印策略生成的完整出库计划，便于在执行设备动作前核对算法结果
+    def _log_outbound_plan_detail(self, outboundplan: OutboundPlan) -> None:
+        logger.info("=" * 80)
+        logger.info(
+            f"出库详细计划开始: task_id={outboundplan.task_id}, "
+            f"task_type={outboundplan.task_type}, "
+            f"total_packages={outboundplan.total_packages}, "
+            f"total_goods={outboundplan.total_goods}, "
+            f"total_batches={len(outboundplan.batches)}"
+        )
+
+        for segment in outboundplan.package_segments:
+            logger.info(
+                f"包裹连续段: package_id={segment.package_id}, "
+                f"target_line={segment.target_line}, "
+                f"total_goods={segment.total_goods}, "
+                f"batches={segment.batch_start}-{segment.batch_end}, "
+                f"sequence={segment.sequence_start}-{segment.sequence_end}, "
+                f"stations={segment.station_codes}, "
+                f"exclusive={segment.exclusive}"
+            )
+
+        for batch in outboundplan.batches:
+            # 包含新取货动作的批次才会写入六个夹爪的任务/无任务寄存器。
+            has_new_plc_command = any(
+                action.action_type == "pick" and action.send_to_plc
+                for station_plan in batch.station_plans
+                for action in station_plan.actions
+            )
+            logger.info(
+                f"计划批次 {batch.batch_no}: target_line={batch.target_line}, "
+                f"outbound_count={batch.outbound_count}, "
+                f"sequence={batch.sequence_start}-{batch.sequence_end}, "
+                f"packages={batch.package_ids}, "
+                f"exclusive={batch.exclusive}, "
+                f"has_new_plc_command={has_new_plc_command}"
+            )
+
+            for station_plan in batch.station_plans:
+                for action in station_plan.actions:
+                    if action.action_type == "idle":
+                        idle_command = (
+                            "write_no_task=1"
+                            if has_new_plc_command
+                            else "no_register_write"
+                        )
+                        logger.info(
+                            f"  工作站 {station_plan.station_code}: "
+                            f"G{action.global_gripper_id}"
+                            f"(local={action.local_gripper_id}), "
+                            f"action=idle, {idle_command}"
+                        )
+                        continue
+
+                    action_mode = (
+                        "send_pick_command"
+                        if action.send_to_plc
+                        else "continue_place"
+                    )
+                    placed_items = [
+                        (
+                            f"{item.goods_sku}/pkg={item.package_id}/"
+                            f"seq={item.sequence}/batch={item.place_batch_no}"
+                        )
+                        for item in action.placed_items
+                    ]
+                    logger.info(
+                        f"  工作站 {action.station_code}: "
+                        f"G{action.global_gripper_id}"
+                        f"(local={action.local_gripper_id}), "
+                        f"action=pick, mode={action_mode}, "
+                        f"location={action.location_code}, layer={action.layer}, "
+                        f"picked_count={action.picked_count}, "
+                        f"picked_goods={action.picked_goods}, "
+                        f"place_count={action.place_count}, "
+                        f"target_line={action.target_line}, "
+                        f"placed_items={placed_items}"
+                    )
+
+        logger.info(f"出库详细计划结束: task_id={outboundplan.task_id}")
+        logger.info("=" * 80)
 
     # 接受出库计划并解析执行
     def _execute_plan(self, outboundplan: OutboundPlan) -> None:
@@ -371,6 +454,13 @@ class Task_Processing:
 
             if self.plc_service.read_outbound_complete():
                 logger.info(f"批次 {batch.batch_no} PLC 确认出库完成")
+                #photo_count = self.plc_service.read_outbound_photo_count()
+                #if photo_count != batch.outbound_count:
+                    #raise RuntimeError(
+                        #f"批次 {batch.batch_no} 光电计数不一致: "
+                        #f"expected={batch.outbound_count}, actual={photo_count}"
+                    #)
+                #logger.info(f"批次 {batch.batch_no} PLC 确认出库完成, 光电计数={photo_count}")
                 return
 
             if time.time() > deadline:

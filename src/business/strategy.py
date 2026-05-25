@@ -22,6 +22,25 @@ STATION_CODES = ("A", "B", "C")
 LOCAL_GRIPPER_IDS = (1, 2)
 
 
+def _slot_clearance_sort_key(
+    location_code: str,
+    simulated_inventory: dict[str, list[str]],
+) -> tuple:
+    station_code, layer, position = CabinetStore.parse_location(location_code)
+
+    has_back_goods = any(
+        simulated_inventory.get(f"{station_code}{layer}{back_pos}", [])
+        for back_pos in BACK_POSITIONS
+    )
+
+    front_total = sum(
+        len(simulated_inventory.get(f"{station_code}{layer}{front_pos}", []))
+        for front_pos in FRONT_POSITIONS
+    )
+
+    return (0 if has_back_goods else 1, front_total, station_code, layer, position)
+
+
 # 策略算法内部用的库位级取货计划
 @dataclass
 class SlotPick:

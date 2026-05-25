@@ -73,6 +73,10 @@ class PLC_Service:
         pos_addr = GripperAddr.pos_addr(gripper_id)
         place_count_addr = GripperAddr.place_count_addr(gripper_id)
 
+        # PLC 每轮会同步处理六个夹爪。即使这里只调试一个夹爪，
+        # 也必须明确告诉 PLC 其他夹爪本轮无任务，避免它们按旧参数执行抓取。
+        self._write_gripper_no_task_flags({gripper_id})
+
         # 写入数量和尺寸
         self._plc_client.write_holding_registers(count_addr, [count])
         self._plc_client.write_holding_registers(size_addr, [size])
@@ -87,8 +91,25 @@ class PLC_Service:
         logger.info(f"夹爪{gripper_id}: 已写入抓取位置=第{layer}层, 夹爪开始执行")
         return True
 
+    # 下发当前同步波次中六个夹爪的任务状态：有抓取动作写0，无任务写1
+    def _write_gripper_no_task_flags(self, active_gripper_ids: set[int]) -> None:
+        for gripper_id in range(1, GripperAddr.GRIPPER_COUNT + 1):
+            no_task = 0 if gripper_id in active_gripper_ids else 1
+            addr = GripperAddr.no_task_addr(gripper_id)
+            self._plc_client.write_holding_registers(addr, [no_task])
+
+        idle_gripper_ids = [
+            gripper_id
+            for gripper_id in range(1, GripperAddr.GRIPPER_COUNT + 1)
+            if gripper_id not in active_gripper_ids
+        ]
+        logger.info(f"当前夹爪同步波次无任务夹爪: {idle_gripper_ids}")
+
     # 控制多个夹爪
     def command_gripper_batch(self, commands: List[Dict], outbound_count: int = 0, delay_before_pos: float = 0.6) -> bool:
+        active_gripper_ids: set[int] = set()
+
+        # 先完成整批参数校验，再向 PLC 写任何寄存器，避免半批命令已经写入后才发现错误。
         for cmd in commands:
             if not 1 <= cmd.get("layer", 0) <= 4:
                 raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(cmd.get("layer")))
@@ -96,7 +117,18 @@ class PLC_Service:
                 raise ParameterError(message="数量超出范围", expected_value="1~4", actual_value=str(cmd.get("count")))
             if not 0 <= cmd.get("place_count", 0) <= cmd.get("count", 0):
                 raise ParameterError(message="放置数量超出范围", expected_value="0~count", actual_value=str(cmd.get("place_count", 0)))
-            
+
+            gid = cmd["gripper_id"]
+            GripperAddr._validate_gripper_id(gid)
+            if gid in active_gripper_ids:
+                raise ParameterError(message="夹爪编号重复", expected_value="同一波次每个夹爪最多一个任务", actual_value=str(gid))
+            active_gripper_ids.add(gid)
+
+        # 有动作的夹爪写0，idle 空闲夹爪写1。
+        # 这一组标志只在下发新的抓取波次时写；同一次夹取的后续连续放货不会调用本函数。
+        self._write_gripper_no_task_flags(active_gripper_ids)
+
+        for cmd in commands:
             gid = cmd["gripper_id"]
             count_addr = GripperAddr.count_addr(gid)
             size_addr = GripperAddr.size_addr(gid)
@@ -239,7 +271,8 @@ class PLC_Service:
     # 清除出库完成标志，每次出库完成后，出库完成标志会置0，在发送下一批出库指令时需要把标志置1
     def clear_outbound_complete(self) -> bool:
         self._plc_client.write_holding_registers(OutboundAddr.COMPLETE_FLAG, [0])
-        logger.info("已清除鞋盒出库完成标志")
+        self._plc_client.write_holding_registers(OutboundAddr.PHOTO_COUNT, [0])
+        logger.info("已清除鞋盒出库完成标志，已重置流水线光电计数")
         return True
 
     # 读取出库流水线计数光电
