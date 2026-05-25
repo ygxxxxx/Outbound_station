@@ -51,6 +51,16 @@ class PackagePlanInfo:
     is_multi_slot: bool         # 是否涉及多个库位
 
 
+# 表示已经下发或准备下发的一次真实夹取动作。
+# 同一次夹取可以在连续批次中为多个相邻包裹继续放货，因此这里需要跨批次追踪它。
+@dataclass
+class ActivePhysicalPick:
+    command_action: GripperAction       # 第一次真正下发 PLC 的夹取动作
+    actions: list[GripperAction]        # 计划中属于这次真实夹取的所有批次动作
+    placed_count: int                   # 到当前已安排连续放置的货物数量
+    last_batch_no: int                  # 这次夹取最后一次连续放置所在批次
+
+
 # 根据 QueueTask 和当前库位库存生成出库计划
 def strategy(queuetask: QueueTask, cabinet_store: CabinetStore) -> OutboundPlan:
     task = queuetask.task
@@ -59,6 +69,7 @@ def strategy(queuetask: QueueTask, cabinet_store: CabinetStore) -> OutboundPlan:
     # 返回值已经是最终计划顺序；这里不要再二次排序，否则会破坏后排补位后的顺序。
     package_infos = build_package_infos(task.packages, cabinet_store)
     batches = build_batches(package_infos)
+    reuse_consecutive_physical_picks(batches)
     package_segments = build_package_segments(package_infos, batches)
 
     plan = OutboundPlan(
@@ -280,18 +291,36 @@ def choose_next_package_info(
     return sorted_infos[0]
 
 def estimate_package_batch_count(info: PackagePlanInfo) -> int:
-    gripper_next_batch: dict[int, int] = {}
-    last_batch_no = 0
+    # 一次写入 PLC 的所有夹爪必须共同完成后，才允许写入下一组夹爪数据。
+    # 所以包裹占用批次数应按“同步命令波次”的最长 place_count 累加计算。
+    return sum(
+        max(len(slot_pick.planned_goods) for slot_pick in command_wave)
+        for command_wave in build_command_waves(info.slot_picks)
+    )
 
-    for slot_pick in info.slot_picks:
-        start_batch_no = gripper_next_batch.get(slot_pick.global_gripper_id, 1)
-        place_count = len(slot_pick.planned_goods)
-        if place_count <= 0:
-            continue
-        last_batch_no = max(last_batch_no, start_batch_no + place_count - 1)
-        gripper_next_batch[slot_pick.global_gripper_id] = start_batch_no + place_count
+def build_command_waves(slot_picks: list[SlotPick]) -> list[list[SlotPick]]:
+    pending_slot_picks = list(slot_picks)
+    command_waves: list[list[SlotPick]] = []
 
-    return last_batch_no
+    while pending_slot_picks:
+        command_wave: list[SlotPick] = []
+        remaining_slot_picks: list[SlotPick] = []
+        used_global_grippers: set[int] = set()
+
+        # 一次 PLC 指令中，同一个夹爪最多接收一个新取货动作。
+        # 没能进入当前波次的动作，必须等当前波次所有夹爪都结束后再统一下发。
+        for slot_pick in pending_slot_picks:
+            if slot_pick.global_gripper_id in used_global_grippers:
+                remaining_slot_picks.append(slot_pick)
+                continue
+
+            command_wave.append(slot_pick)
+            used_global_grippers.add(slot_pick.global_gripper_id)
+
+        command_waves.append(command_wave)
+        pending_slot_picks = remaining_slot_picks
+
+    return command_waves
 
 def build_batches(sorted_infos: list[PackagePlanInfo]) -> list[OutboundBatch]:
     batches: list[OutboundBatch] = []
@@ -424,23 +453,29 @@ def build_batches_for_package(
     start_sequence: int,
 ) -> tuple[list[OutboundBatch], int, int]:
     command_actions: list[GripperAction] = []
-    gripper_next_batch: dict[int, int] = {}
 
     if not info.slot_picks:
         return [], start_batch_no, start_sequence
 
-    for slot_pick in info.slot_picks:
-        # 同一个全局夹爪如果连续服务同一个包裹的多个库位，后一个库位必须等前一个
-        # place_count 对应的连续批次都放完后才能再发新的取货命令。
-        command_batch_no = gripper_next_batch.get(slot_pick.global_gripper_id, start_batch_no)
-        action = create_gripper_action(
-            slot_pick = slot_pick,
-            current_slot_goods = slot_pick.picked_goods,
-            batch_no = command_batch_no,
-            start_sequence = 0,
-        )
-        command_actions.append(action)
-        gripper_next_batch[slot_pick.global_gripper_id] = command_batch_no + action.place_count
+    next_command_batch_no = start_batch_no
+    for command_wave in build_command_waves(info.slot_picks):
+        wave_actions: list[GripperAction] = []
+
+        for slot_pick in command_wave:
+            action = create_gripper_action(
+                slot_pick = slot_pick,
+                current_slot_goods = slot_pick.picked_goods,
+                batch_no = next_command_batch_no,
+                start_sequence = 0,
+            )
+            wave_actions.append(action)
+            command_actions.append(action)
+
+        # 这一组夹爪是同时写给 PLC 的命令。
+        # 即使有夹爪 place_count 较小而提前空闲，也必须等待本组最长动作放完，
+        # 下一组夹爪命令才能在后续批次一起写入 PLC。
+        wave_duration = max(action.place_count for action in wave_actions)
+        next_command_batch_no += wave_duration
 
     next_sequence = renumber_placed_items(command_actions, start_sequence)
     last_batch_no = max(
@@ -469,6 +504,147 @@ def build_batches_for_package(
         package_batches.append(batch)
 
     return package_batches, last_batch_no + 1, next_sequence
+
+def reuse_consecutive_physical_picks(batches: list[OutboundBatch]) -> None:
+    active_picks: dict[tuple[int, str], ActivePhysicalPick] = {}
+
+    for batch in batches:
+        action_refs = batch_pick_action_refs(batch)
+        new_command_refs = [
+            action_ref
+            for action_ref in action_refs
+            if action_ref[2].send_to_plc
+        ]
+        continuing_refs = [
+            action_ref
+            for action_ref in action_refs
+            if not action_ref[2].send_to_plc
+        ]
+
+        # 原始计划中如果本批次已经是同一次夹取的后续放置，
+        # 只需要把它接到当前正在追踪的真实夹取上。
+        if continuing_refs and not new_command_refs:
+            for station_plan, action_index, action in continuing_refs:
+                physical_pick = active_picks.get(physical_pick_key(action))
+                if physical_pick is None or not can_append_to_physical_pick(physical_pick, action, batch.batch_no):
+                    raise ValueError(f"批次 {batch.batch_no} 的连续放置动作找不到对应的原始夹取命令")
+                append_action_to_physical_pick(
+                    physical_pick = physical_pick,
+                    batch_no = batch.batch_no,
+                    placed_items = action.placed_items,
+                    station_plan = station_plan,
+                    action_index = action_index,
+                )
+            continue
+
+        # 本批次本来准备重新夹取，但如果所有实际出货动作都能由上一批正在连续放置的
+        # 夹爪继续提供，就应复用第一次整库位夹取，而不是让货物回库后重新抓取。
+        if new_command_refs and can_reuse_previous_physical_picks(
+            batch_no = batch.batch_no,
+            action_refs = new_command_refs,
+            active_picks = active_picks,
+        ):
+            for station_plan, action_index, action in new_command_refs:
+                append_action_to_physical_pick(
+                    physical_pick = active_picks[physical_pick_key(action)],
+                    batch_no = batch.batch_no,
+                    placed_items = action.placed_items,
+                    station_plan = station_plan,
+                    action_index = action_index,
+                )
+            logger.info(f"批次 {batch.batch_no} 复用上一批夹爪已夹起的剩余货物，不重新下发取货命令")
+            continue
+
+        # 不能整体复用时，本批次仍是一轮新的 PLC 夹取命令。
+        # 这里整体替换追踪集合，是为了遵守“上一轮未结束时不能写新夹爪数据”的硬件约束。
+        if new_command_refs:
+            active_picks = {
+                physical_pick_key(action): ActivePhysicalPick(
+                    command_action = action,
+                    actions = [action],
+                    placed_count = len(action.placed_items),
+                    last_batch_no = batch.batch_no,
+                )
+                for _, _, action in new_command_refs
+            }
+            continue
+
+        active_picks = {}
+
+def batch_pick_action_refs(
+    batch: OutboundBatch,
+) -> list[tuple[StationBatchPlan, int, GripperAction]]:
+    return [
+        (station_plan, action_index, action)
+        for station_plan in batch.station_plans
+        for action_index, action in enumerate(station_plan.actions)
+        if action.action_type == "pick"
+    ]
+
+def physical_pick_key(action: GripperAction) -> tuple[int, str]:
+    if action.location_code is None:
+        raise ValueError("真实取货动作必须包含 location_code")
+    return action.global_gripper_id, action.location_code
+
+def can_reuse_previous_physical_picks(
+    batch_no: int,
+    action_refs: list[tuple[StationBatchPlan, int, GripperAction]],
+    active_picks: dict[tuple[int, str], ActivePhysicalPick],
+) -> bool:
+    if not active_picks:
+        return False
+
+    return all(
+        (
+            physical_pick_key(action) in active_picks
+            and can_append_to_physical_pick(
+                active_picks[physical_pick_key(action)],
+                action,
+                batch_no,
+            )
+        )
+        for _, _, action in action_refs
+    )
+
+def can_append_to_physical_pick(
+    physical_pick: ActivePhysicalPick,
+    action: GripperAction,
+    batch_no: int,
+) -> bool:
+    if physical_pick.last_batch_no != batch_no - 1:
+        return False
+    if physical_pick.command_action.target_line != action.target_line:
+        return False
+
+    placed_skus = [item.goods_sku for item in action.placed_items]
+    start_index = physical_pick.placed_count
+    end_index = start_index + len(placed_skus)
+    remaining_prefix = physical_pick.command_action.picked_goods[start_index:end_index]
+    return remaining_prefix == placed_skus
+
+def append_action_to_physical_pick(
+    physical_pick: ActivePhysicalPick,
+    batch_no: int,
+    placed_items: list[PlacedItem],
+    station_plan: StationBatchPlan,
+    action_index: int,
+) -> None:
+    continued_action = clone_action_for_batch(
+        command = physical_pick.command_action,
+        batch_no = batch_no,
+        placed_items = placed_items,
+    )
+    continued_action.send_to_plc = False
+    station_plan.actions[action_index] = continued_action
+
+    physical_pick.actions.append(continued_action)
+    physical_pick.placed_count += len(placed_items)
+    physical_pick.last_batch_no = batch_no
+
+    # place_count 在第一次取货指令下发时就必须包含未来所有连续放置批次。
+    # 因此识别出跨包裹复用后，要把同一次物理夹取的所有计划视图统一更新。
+    for action in physical_pick.actions:
+        action.place_count = physical_pick.placed_count
 
 def build_package_segments(
     package_infos: list[PackagePlanInfo],
@@ -526,6 +702,7 @@ def validate_plan(plan: OutboundPlan, cabinet_store: CabinetStore) -> None:
     check_batch_shape(plan)
     check_batch_outbound_count(plan)
     check_action_counts(plan)
+    check_command_wave_barrier(plan)
     check_location_layer_consistency(plan)
     check_station_target_line(plan)
     check_sequence_continuous(plan)
@@ -766,6 +943,22 @@ def check_action_counts(plan: OutboundPlan) -> None:
             raise ValueError(f"{action.location_code} 同一夹爪同一批次最多只能放置 1 个货物")
         if len(action.placed_items) > action.place_count:
             raise ValueError(f"{action.location_code} 当前批次 placed_items 数量不能超过 place_count")
+
+def check_command_wave_barrier(plan: OutboundPlan) -> None:
+    for batch in plan.batches:
+        pick_actions = [
+            action
+            for station_plan in batch.station_plans
+            for action in station_plan.actions
+            if action.action_type == "pick"
+        ]
+        has_new_command = any(action.send_to_plc for action in pick_actions)
+        has_continuing_action = any(not action.send_to_plc for action in pick_actions)
+
+        if has_new_command and has_continuing_action:
+            raise ValueError(
+                f"批次 {batch.batch_no} 在旧夹爪仍连续放货时写入了新的夹爪命令"
+            )
 
 def check_location_layer_consistency(plan: OutboundPlan) -> None:
     for action in all_actions(plan):

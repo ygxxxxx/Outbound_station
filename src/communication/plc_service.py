@@ -204,6 +204,10 @@ class PLC_Service:
     # 获取完整状态字典，用于 RCS 状态上报
     def get_full_status(self) -> dict:
         return self._status_data.to_dict()
+
+    # 给RCS上报数据
+    def get_to_rcs(self) -> dict:
+        return self._status_data.to_rcs()
     
     # 清除收纳柜运行超时标志
     def clear_cabinet_timeout(self, station_id: int, layer: int) -> bool:
@@ -237,6 +241,11 @@ class PLC_Service:
         logger.info("已清除鞋盒出库完成标志")
         return True
 
+    # 读取出库流水线计数光电
+    def read_outbound_photo_count(self) -> int:
+        result = self._plc_client.read_holding_registers(OutboundAddr.PHOTO_COUNT, 1)
+        return result[0]
+    
 
 if __name__ == "__main__":
     plc = PLC_Client(host = '192.168.1.88', port = 502, slave_id= 1, timeout= 5)

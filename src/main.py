@@ -1,6 +1,7 @@
 from src.communication.rcs_sever import RCS_Sever
+from src.communication.plc_client import PLC_Client
 from src.communication.plc_service import PLC_Service
-from src.communication.vision_gate import VisionGateClient
+# from src.communication.vision_gate import VisionGateClient
 from src.business.request_handle import parse_outbound_task, handle_status_request, handle_task_request
 from src.business.state_machine import StateMachine
 from src.business.task_manager import TaskManager
@@ -13,44 +14,80 @@ from functools import partial
 
 import time
 
-
 logger = logger.bind(tag="Main")
+
+class _DummyStateMachine:
+    def __init__(self, *args, **kwargs):
+        pass
+    def transition(self, *args, **kwargs):
+        pass
+    def get_task_execution_detail(self):
+        return {}
+    def get_storage_info(self):
+        return {}
+    def get_outbound_station_status(self):
+        return {}
+    def get_workstation_plc_status(self):
+        return {}
+    def clear_cabinet_timeout(self):
+        pass
 
 
 rcs: RCS_Sever = None
 plc: PLC_Service = None
-vis: VisionGateClient = None
+plc_client: PLC_Client = None
+# vis: VisionGateClient = None
 state: StateMachine = None
 taskmanger: TaskManager = None
 taskprocessing: Task_Processing = None
 cabinet_store: CabinetStore = None
 
 def start():
-    global rcs, plc, vis, state, taskmanger, taskprocessing, cabinet_store
+    global rcs, plc, plc_client, state, taskmanager, taskprocessing, cabinet_store
     
-    state = StateMachine()
+    state = _DummyStateMachine()
     taskmanager = TaskManager()
     cabinet_store = CabinetStore.create(station_prefixes=["A", "B", "C"])
 
-    on_status = partial(handle_status_request, state)
+    plc_client = PLC_Client(
+        host = "192.168.1.88",
+        port = 502,
+        slave_id = 1,
+        timeout = 5
+    )
+    plc = PLC_Service(plc_client)
+    plc.start_connects()
+    plc.start_status_polling()
+
+    on_status = partial(handle_status_request, state, plc, cabinet_store)
     on_task = partial(handle_task_request, taskmanager, state)
 
     rcs = RCS_Sever(
+        status_host = "127.0.0.1",
+        status_port = 23310,
+        task_host = "0.0.0.0",
+        task_port = 23311,
         on_status_request=on_status,
         on_task_request=on_task,)
-    plc = PLC_Service()
-    vis = VisionGateClient()
     
-    taskprocessing = Task_Processing(taskmanger, plc, state)
+    taskprocessing = Task_Processing(taskmanager, plc, state, cabinet_store)
+
+    rcs.start()
+    taskprocessing.start()
 
 
-
-
-
-
-
+def stop():
+    rcs.stop()
+    taskprocessing.stop()
+    plc.close()
 
 def main():
     start()
+    try:
+        while True:
+            time.sleep(2)
+                     
+    except KeyboardInterrupt:
+       stop()
 
-
+main()

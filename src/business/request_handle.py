@@ -1,5 +1,6 @@
 from src.business.task_manager import TaskManager, QueueTask
 from src.communication.rcs_sever import CmdType
+from src.communication.plc_service import PLC_Service
 from src.business.state_machine import StateMachine, StationState
 from src.models.outbound_task_model import OutboundTask, Package, Put_Goods
 from src.models.containers import CabinetStore
@@ -47,7 +48,7 @@ def parse_outbound_task(body_dict: dict) -> OutboundTask:
 
 
 # 处理状态端口接收到的请求
-def handle_status_request(state_machine: StateMachine, cabinet_store: CabinetStore, cmd: int, body_dict: dict) -> dict:
+def handle_status_request(state_machine: StateMachine, plc_service: PLC_Service, cabinet_store: CabinetStore, cmd: int, body_dict: dict) -> dict:
     try:
         if cmd == CmdType.OUTBOUND_TASK_DETAIL_REQ:                 # 查询出库任务执行情况
             business_data = state_machine.get_task_execution_detail()
@@ -62,7 +63,7 @@ def handle_status_request(state_machine: StateMachine, cabinet_store: CabinetSto
             return build_common_response(business_data)
 
         elif cmd == CmdType.OUTBOUND_WORKSTATION_PLC_STATUS_REQ:    # 查询工作站PLC状态
-            business_data = state_machine.get_workstation_plc_status()
+            business_data = plc_service.get_to_rcs()
             return build_common_response(business_data)
         
         elif cmd == CmdType.OUTBOUND_BATCH_REQ:                     # 批量查询出库全部信息
@@ -75,13 +76,17 @@ def handle_status_request(state_machine: StateMachine, cabinet_store: CabinetSto
             for name, method in [
                 ("task_detail", state_machine.get_task_execution_detail),
                 ("status", state_machine.get_outbound_station_status),
-                ("plc_status", state_machine.get_workstation_plc_status),
             ]:
                 try:
                     business_data.update(method())
                 except Exception as e:
                     logger.error(f"批量查询 {name} 失败: {e}")
                     business_data[f"{name}_error"] = str(e)
+            try:
+                business_data.update(plc_service.get_to_rcs())
+            except Exception as e:
+                logger.error(f"批量查询 plc_status 失败: {e}")
+
             return build_common_response(business_data)
         
         else:

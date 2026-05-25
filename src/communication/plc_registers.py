@@ -72,6 +72,18 @@ class GripperAddr:
         cls._validate_gripper_id(gripper_id)
         return 32 + gripper_id  # 即 (gripper_id - 1) + 33
 
+    GRIPPER_1_NO_TASK = 66 # 夹爪1无任务寄存器，写1夹爪视为完成任务状态，不执行抓取任务
+    GRIPPER_2_NO_TASK = 67
+    GRIPPER_3_NO_TASK = 68
+    GRIPPER_4_NO_TASK = 69
+    GRIPPER_5_NO_TASK = 70
+    GRIPPER_6_NO_TASK = 71
+
+    @classmethod
+    def no_task_addr(cls, gripper_id: int) -> int:
+        cls._validate_gripper_id(gripper_id)
+        return 65 + gripper_id
+
 
 # 库位传送带寄存器
 class CabinetCtrlAddr:
@@ -114,17 +126,17 @@ class CabinetCtrlAddr:
     WSC_L4_NO_BOX = 50
 
     WSA_L1_BACK = 51   # 工作站A1层库位传送带后退
-    WSA_L2_BACK = 51   # 工作站A2层库位传送带后退
-    WSA_L3_BACK = 51   # 工作站A3层库位传送带后退
-    WSA_L4_BACK = 51   # 工作站A4层库位传送带后退
-    WSB_L1_BACK = 51   # 工作站B1层库位传送带后退
-    WSB_L2_BACK = 51   # 工作站B2层库位传送带后退
-    WSB_L3_BACK = 51   # 工作站B3层库位传送带后退
-    WSB_L4_BACK = 51   # 工作站B4层库位传送带后退
-    WSC_L1_BACK = 51   # 工作站C1层库位传送带后退
-    WSC_L2_BACK = 51   # 工作站C2层库位传送带后退
-    WSC_L3_BACK = 51   # 工作站C3层库位传送带后退
-    WSC_L4_BACK = 51   # 工作站C4层库位传送带后退
+    WSA_L2_BACK = 52   # 工作站A2层库位传送带后退
+    WSA_L3_BACK = 53   # 工作站A3层库位传送带后退
+    WSA_L4_BACK = 54   # 工作站A4层库位传送带后退
+    WSB_L1_BACK = 55   # 工作站B1层库位传送带后退
+    WSB_L2_BACK = 56   # 工作站B2层库位传送带后退
+    WSB_L3_BACK = 57   # 工作站B3层库位传送带后退
+    WSB_L4_BACK = 58   # 工作站B4层库位传送带后退
+    WSC_L1_BACK = 59   # 工作站C1层库位传送带后退
+    WSC_L2_BACK = 60   # 工作站C2层库位传送带后退
+    WSC_L3_BACK = 61   # 工作站C3层库位传送带后退
+    WSC_L4_BACK = 62   # 工作站C4层库位传送带后退
 
  
 
@@ -310,13 +322,14 @@ class StatusAddr:
 class OutboundAddr:
     BATCH_COUNT = 63
     COMPLETE_FLAG = 64
+    PHOTO_COUNT = 65
 
 # 全局地址区间 
 class RegisterRange:
 
     CTRL_START = 0           # 控制区起始地址
-    CTRL_END = 64            # 控制区结束地址
-    CTRL_COUNT = 65          # 控制区寄存器总数
+    CTRL_END = 71            # 控制区结束地址
+    CTRL_COUNT = 72          # 控制区寄存器总数
 
     STATUS_START = 100       # 状态区起始地址
     STATUS_END = 166         # 状态区结束地址

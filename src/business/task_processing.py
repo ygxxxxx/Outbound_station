@@ -51,7 +51,7 @@ class Task_Processing:
                     queuetask.task.station_id, StationState.READY, reason="解析任务")
                 # 解析任务类型
                 if queuetask.task_types == "putaway":
-                    self._putway_task_processing(queuetask)  # 如果是放货任务进放货任务处理函数
+                    self._putaway_task_processing(queuetask)
 
                 elif queuetask.task_types == "outbound":
                     self._outbound_task_processing(
@@ -268,6 +268,9 @@ class Task_Processing:
             if self._stop_event.is_set():
                 raise RuntimeError("任务处理已停止，出库计划中断")
 
+            # strategy 可能在计划中已将后排货物按补位后的前排库位安排出库。
+            # 执行到该批次前，必须先让真实设备完成补位，并同步本地库位库存。
+            self._execute_required_front_refill_before_batch(batch)
             self._execute_batch(batch)
 
         logger.info(f"出库计划执行完成: task_id={outboundplan.task_id}")
@@ -280,7 +283,19 @@ class Task_Processing:
                 f"批次 {batch.batch_no} 出库数量不一致: "
                 f"outbound_count={batch.outbound_count}, placed_count={placed_count}"
             )
+
+        # 需要重新写入 PLC 夹爪参数的动作，只能是本轮新开始的取货动作。
         commands = self._build_plc_commands_for_batch(batch)
+        has_continuing_action = any(
+            action.action_type == "pick" and not action.send_to_plc
+            for station_plan in batch.station_plans
+            for action in station_plan.actions
+        )
+
+        # 旧夹爪还在连续放货时，不能给空闲夹爪写新数据。
+        if commands and has_continuing_action:
+            raise ValueError(f"批次 {batch.batch_no} 继续放货过程中不能下发新的夹爪命令")
+
         logger.info(
             f"开始执行批次 {batch.batch_no}: "
             f"outbound_count={batch.outbound_count}, "
@@ -293,10 +308,17 @@ class Task_Processing:
             return
 
         self.plc_service.clear_outbound_complete()
-        self.plc_service.command_gripper_batch(
-            commands,
-            outbound_count=batch.outbound_count,
-        )
+
+        if commands:
+            self.plc_service.command_gripper_batch(
+                commands,
+                outbound_count=batch.outbound_count,
+            )
+        elif has_continuing_action:
+            # 当前批次是上一轮夹取后的继续放货，只更新出库数量，不能重写夹爪数据
+            self.plc_service.command_outbound_batch_count(batch.outbound_count)
+        else:
+            raise ValueError(f"批次 {batch.batch_no} 有出库数量但没有可执行夹爪动作")
 
         self._wait_outbound_batch_complete(batch)
         self._update_cabinet_store_after_batch(batch)
@@ -332,7 +354,7 @@ class Task_Processing:
         return commands
 
     # 等待出库完成信号
-    def _wait_outbound_batch_complete(self, batch: OutboundBatch, timeout: float = 30.0) -> None:
+    def _wait_outbound_batch_complete(self, batch: OutboundBatch, timeout: float = 100.0) -> None:
         deadline = time.time() + timeout
 
         while not self._stop_event.is_set():
@@ -386,3 +408,81 @@ class Task_Processing:
             for station_plan in batch.station_plans
             for action in station_plan.actions
         )
+
+    # 在批次开始前检查：计划中的前排取货是否需要先由后排货物补位得到
+    def _execute_required_front_refill_before_batch(self, batch: OutboundBatch) -> None:
+        refill_layers: set[tuple[str, int]] = set()
+
+        for station_plan in batch.station_plans:
+            for action in station_plan.actions:
+                # 同一次夹取的后续连续放置不会再次取库位，也不应触发新的补位动作。
+                if action.action_type != "pick" or not action.send_to_plc:
+                    continue
+                if action.location_code is None:
+                    continue
+
+                station_code, layer, position = CabinetStore.parse_location(action.location_code)
+                if position not in (1, 2):
+                    continue
+
+                current_slot = self.cabinet_store.get_slot(action.location_code)
+                if current_slot is None:
+                    raise RuntimeError(f"计划使用了不存在的库位: {action.location_code}")
+
+                # 当前前排库存已经和计划夹取内容相同，说明该动作不依赖补位。
+                if current_slot.goods == action.picked_goods:
+                    continue
+
+                back_location = f"{station_code}{layer}{position + 2}"
+                back_slot = self.cabinet_store.get_slot(back_location)
+                if back_slot is None or back_slot.goods != action.picked_goods:
+                    continue
+
+                front_locations = [f"{station_code}{layer}{front_position}" for front_position in (1, 2)]
+                if all(self.cabinet_store.get_slot(location).is_empty for location in front_locations):
+                    refill_layers.add((station_code, layer))
+
+        for station_code, layer in sorted(refill_layers):
+            self._execute_front_refill(station_code, layer, batch.batch_no)
+
+    # 控制某一层后排货物向前补位，并在设备到位后更新 CabinetStore
+    def _execute_front_refill(self, station_code: str, layer: int, batch_no: int) -> None:
+        station_id = self._parse_station_id(station_code)
+        logger.info(f"批次 {batch_no} 执行前进行库位补位: 工作站={station_code}, layer={layer}")
+
+        self.plc_service.command_cabinet_forward(station_id, layer)
+        self._wait_front_refill_complete(station_id, layer, batch_no)
+
+        moved_goods = self.cabinet_store.move_back_goods_to_front(station_code, layer)
+        if not moved_goods:
+            raise RuntimeError(f"批次 {batch_no} 补位完成但未找到可移动货物: {station_code}{layer}层")
+
+        logger.info(f"批次 {batch_no} 库位补位库存同步完成: {moved_goods}")
+
+    # 等待传送带把后排货物送到前排位置
+    def _wait_front_refill_complete(
+        self,
+        station_id: int,
+        layer: int,
+        batch_no: int,
+        timeout: float = 30.0,
+    ) -> None:
+        deadline = time.time() + timeout
+
+        while not self._stop_event.is_set():
+            if self.plc_service.is_emergency_stop():
+                raise RuntimeError(f"批次 {batch_no} 补位过程中触发急停")
+
+            if self.plc_service.is_cabinet_timeout(station_id, layer):
+                raise RuntimeError(f"批次 {batch_no} 补位失败: 工作站{station_id} {layer}层传送带超时")
+
+            if self.plc_service.is_photo_triggered(station_id, layer, "front"):
+                logger.info(f"批次 {batch_no} 补位完成: 工作站{station_id} {layer}层前光电已触发")
+                return
+
+            if time.time() > deadline:
+                raise TimeoutError(f"批次 {batch_no} 等待工作站{station_id} {layer}层补位完成超时")
+
+            self._stop_event.wait(timeout=0.2)
+
+        raise RuntimeError(f"任务停止，批次 {batch_no} 等待库位补位中断")

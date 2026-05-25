@@ -138,6 +138,34 @@ class CabinetStore:
             if slot.remove_goods(sku):
                 count += 1
         return count
+
+    # 当前层前排库位已清空后，将后排货物同步移动到机械臂能够取到的前排库位
+    def move_back_goods_to_front(self, station_prefix: str, layer: int) -> dict[str, list[str]]:
+        if station_prefix not in ("A", "B", "C"):
+            raise ValueError(f"未知工作站编号: {station_prefix}")
+        if not 1 <= layer <= 4:
+            raise ValueError(f"未知库位层号: {layer}")
+
+        front_locations = [f"{station_prefix}{layer}{position}" for position in (1, 2)]
+        if any(not self._slots[location_code].is_empty for location_code in front_locations):
+            raise RuntimeError(f"{station_prefix}{layer}层前排仍有货物，不能执行后排补位")
+
+        moved_goods: dict[str, list[str]] = {}
+        for back_position, front_position in ((3, 1), (4, 2)):
+            back_location = f"{station_prefix}{layer}{back_position}"
+            front_location = f"{station_prefix}{layer}{front_position}"
+            back_slot = self._slots[back_location]
+            front_slot = self._slots[front_location]
+
+            if back_slot.is_empty:
+                continue
+
+            goods = list(back_slot.goods)
+            front_slot.goods = goods
+            back_slot.clear()
+            moved_goods[f"{back_location}->{front_location}"] = goods
+
+        return moved_goods
     
     # 清空指定库位的所有货物
     def clear_slot(self, location_code: str) -> bool:
