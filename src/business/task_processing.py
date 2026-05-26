@@ -67,9 +67,11 @@ class Task_Processing:
                 self._stop_event.wait(timeout=5.0)
 
     @staticmethod
-    def _parse_station_id(station_id_str: str) -> int:
+    def _parse_station_id(station_code: str) -> int:
         mapping = {"A": 1, "B": 2, "C": 3}
-        return mapping.get(station_id_str, 1)
+        if station_code not in mapping:
+            raise ValueError(f"非法工作站编号: {station_code}")
+        return mapping[station_code]
 
     @staticmethod
     def _parse_layer_from_location(storage_location: str) -> int:
@@ -83,11 +85,56 @@ class Task_Processing:
             return int(storage_location[2])
         return 0
 
+    def _transition_or_raise(self, station_code: str, target: StationState, reason: str) -> None:
+        if not self.state_machine.transition(station_code, target, reason=reason):
+            raise RuntimeError(f"工作站{station_code}无法切换到状态{target.value}")
+
+    def _fail_running_task(self, queuetask: QueueTask, station_codes: list[str], error: Exception) -> None:
+        error_msg = str(error)
+        for station_code in station_codes:
+            self.state_machine.transition(station_code, StationState.ERROR, reason=error_msg)
+        self.taskmanager.fail_task(queuetask.task_id, error_msg)
+
+    def _build_putaway_placements(
+        self,
+        queuetask: QueueTask,
+        layer_goods_info: dict[int, dict[str, bool]],
+    ) -> list[tuple[str, list[str], str]]:
+        placements: list[tuple[str, list[str], str]] = []
+        planned_qty: dict[str, int] = {}
+        back_to_front_map = {"3": "1", "4": "2"}
+
+        for goods in queuetask.task.put_goods:
+            if goods.abr_count <= 0:
+                continue
+
+            layer = self._parse_layer_from_location(goods.storage_location)
+            actual_location = goods.storage_location
+            if not layer_goods_info[layer]["front"]:
+                actual_position = back_to_front_map[goods.storage_location[2]]
+                actual_location = f"{queuetask.task.station_id}{layer}{actual_position}"
+
+            slot = self.cabinet_store.get_slot(actual_location)
+            if slot is None:
+                raise ValueError(f"落位库位不存在: {actual_location}")
+
+            next_qty = planned_qty.get(actual_location, slot.qty) + len(goods.good_sku)
+            if next_qty > 4:
+                raise ValueError(
+                    f"落位库位容量不足: {actual_location}, 当前{slot.qty}, "
+                    f"本次计划放入{next_qty - slot.qty}件"
+                )
+            planned_qty[actual_location] = next_qty
+            placements.append((actual_location, goods.good_sku, goods.storage_location))
+
+        return placements
+
     # 放货处理
     def _putaway_task_processing(self, queuetask: QueueTask) -> None:
         logger.info(f"开始处理放货任务{queuetask.task_id}")
 
-        station_id = self._parse_station_id(queuetask.task.station_id)
+        station_code = queuetask.task.station_id
+        plc_station_id = self._parse_station_id(station_code)
 
         # layer -> {"front": bool, "back": bool} 记录每层前区(1,2位)和后区(3,4位)是否有货
         layer_goods_info: dict[int, dict[str, bool]] = {}
@@ -96,8 +143,14 @@ class Task_Processing:
                 layer = self._parse_layer_from_location(pg.storage_location)
                 position = self._parse_position_from_location(
                     pg.storage_location)
-                if not (1 <= layer <= 4 and 1 <= position <= 4):
-                    continue
+                if (
+                    not isinstance(pg.storage_location, str)
+                    or len(pg.storage_location) != 3
+                    or pg.storage_location[0] != station_code
+                    or not (1 <= layer <= 4 and 1 <= position <= 4)
+                    or pg.abr_count != len(pg.good_sku)
+                ):
+                    raise ValueError(f"非法放货数据: {pg.storage_location}")
                 if layer not in layer_goods_info:
                     layer_goods_info[layer] = {"front": False, "back": False}
                 if position in (1, 2):
@@ -109,124 +162,82 @@ class Task_Processing:
         goods_layers = set(layer_goods_info.keys())
         empty_layers = all_layers - goods_layers
 
-        # 无货物的层：下发跳过指令，禁止传送带运行
-        for layer in sorted(empty_layers):
-            self.plc_service.command_cabinet_no_box(station_id, layer)
-
-        # 所有层都没有货物，直接跳过
-        if not goods_layers:
-            self.taskmanager.remove_pending(queuetask.task_id)
-            self.taskmanager.add_to_running(queuetask)
-            logger.warning(f"工作站{station_id} 所有层均无货物，直接标记放货完成")
-            self.state_machine.transition(
-                station_id, StationState.WAITING_DELIVERY, reason="放货任务开始(无货物)")
-            self.state_machine.transition(
-                station_id, StationState.DELIVERED, reason="无货物直接完成")
-            return
-
-        logger.info(
-            f"工作站{station_id} 有货物的层: {sorted(goods_layers)}, 详情: {layer_goods_info}")
-
-        # 将任务从待执行任务转移至运行中
+        # 设备动作开始后，任何异常均终止任务，避免重复出货。
         self.taskmanager.remove_pending(queuetask.task_id)
         self.taskmanager.add_to_running(queuetask)
 
-        # 开始执行任务
-        self.plc_service.command_cabinet_place(station_id)
-        self.state_machine.transition(station_id, StationState.WAITING_DELIVERY, reason="放货任务开始")
+        try:
+            placements = self._build_putaway_placements(queuetask, layer_goods_info)
+            self._transition_or_raise(station_code, StationState.WAITING_DELIVERY, "放货任务开始")
 
-        # 超时时间戳
-        total_timeout = time.time() + 60
-        while not self._stop_event.is_set():
-            # 触发急停，停止放货
-            if self.plc_service.is_emergency_stop():
-                logger.error(f"工作站{station_id} 放货过程中急停触发")
-                self.state_machine.transition(station_id, StationState.ERROR, reason="急停")
+            # 无货物的层：下发跳过指令，禁止传送带运行
+            for layer in sorted(empty_layers):
+                self.plc_service.command_cabinet_no_box(plc_station_id, layer)
+
+            # 所有层都没有货物，直接跳过
+            if not goods_layers:
+                logger.warning(f"工作站{station_code} 所有层均无货物，直接标记放货完成")
+                self._transition_or_raise(station_code, StationState.DELIVERED, "无货物直接完成")
+                self.taskmanager.complete_task(queuetask.task_id)
+                self.state_machine.transition(station_code, StationState.IDLE, reason="放货任务已释放")
                 return
 
-            # 如果没有都到位则标志位会变成False，光电都触发则保持True
-            all_triggered = True
-            for layer in sorted(goods_layers):
-                info = layer_goods_info[layer]
-                front = self.plc_service.is_photo_triggered(
-                    station_id, layer, "front")  # 读取前光电状态
-                need_back = info["front"] and info["back"]  # 前后层如果都需要判断返回True
-                if need_back:
-                    back = self.plc_service.is_photo_triggered(
-                        station_id, layer, "back")  # 读取后光电状态
-                    if not (front and back):
-                        logger.debug(
-                            f"工作站{station_id} {layer}层需前后光电 front={front} back={back}")
+            logger.info(
+                f"工作站{station_code} 有货物的层: {sorted(goods_layers)}, 详情: {layer_goods_info}")
+
+            self.plc_service.command_cabinet_place(plc_station_id)
+
+            total_timeout = time.time() + 60
+            while not self._stop_event.is_set():
+                if self.plc_service.is_emergency_stop():
+                    raise RuntimeError(f"工作站{station_code}放货过程中急停触发")
+
+                all_triggered = True
+                for layer in sorted(goods_layers):
+                    info = layer_goods_info[layer]
+                    front = self.plc_service.is_photo_triggered(
+                        plc_station_id, layer, "front")
+                    need_back = info["front"] and info["back"]
+                    if need_back:
+                        back = self.plc_service.is_photo_triggered(
+                            plc_station_id, layer, "back")
+                        if not (front and back):
+                            all_triggered = False
+                    elif not front:
                         all_triggered = False
-                else:
-                    if not front:
-                        logger.debug(
-                            f"工作站{station_id} {layer}层需前光电 front={front}")
-                        all_triggered = False
 
-            # 如果这一层ABR是有货的，但是触发库位传送带超时报警说明出现了意外，货物一直没到位没法触发光电
-            for layer in sorted(goods_layers):
-                if self.plc_service.is_cabinet_timeout(station_id, layer):
-                    logger.error(f"工作站{station_id} {layer}层传送带超时，光电未检测到货物")
-                    self.state_machine.transition(station_id, StationState.ERROR, reason=f"{layer}层放货超时")
-                    return
+                for layer in sorted(goods_layers):
+                    if self.plc_service.is_cabinet_timeout(plc_station_id, layer):
+                        raise RuntimeError(f"工作站{station_code} {layer}层放货超时")
 
-            # 如果标志位是True，说明光电都按照货物位置正常触发了
-            if all_triggered:
-                logger.info(f"工作站{station_id} 所有货物层光电判定完成，放货完成")
-                break
+                if all_triggered:
+                    logger.info(f"工作站{station_code} 所有货物层光电判定完成，放货完成")
+                    break
 
-            if time.time() > total_timeout:
-                logger.error(f"工作站{station_id} 放货超时")
-                self.state_machine.transition(queuetask.task.station_id, StationState.ERROR, reason="放货超时")
-                return
+                if time.time() > total_timeout:
+                    raise TimeoutError(f"工作站{station_code}放货超时")
 
-            self._stop_event.wait(timeout=0.2)
+                self._stop_event.wait(timeout=0.2)
 
-        # 货物写入库位管理
-        # 按层分组 put_goods
-        layer_put_goods: dict[int, list] = {}
-        for pg in queuetask.task.put_goods:
-            if pg.abr_count > 0:
-                layer = self._parse_layer_from_location(pg.storage_location)
-                if layer not in layer_put_goods:
-                    layer_put_goods[layer] = []
-                layer_put_goods[layer].append(pg)
+            if self._stop_event.is_set():
+                raise RuntimeError("任务处理停止，放货任务中断")
 
-        station_prefix = queuetask.task.station_id
-        back_to_front_map = {"3": "1", "4": "2"}
-
-        for layer in sorted(layer_put_goods.keys()):
-            info = layer_goods_info[layer]
-
-            if info["front"]:
-                # 该层有前区货物，传送带提前停止，所有货物在原位
-                for pg in layer_put_goods[layer]:
-                    actual_location = pg.storage_location
-                    logger.info(
-                        f"写入库位: {actual_location}, "
-                        f"SKU: {pg.good_sku}, 数量: {pg.abr_count}"
+            for actual_location, goods_sku, original_location in placements:
+                logger.info(
+                    f"写入库位: {actual_location} (原始: {original_location}), "
+                    f"SKU: {goods_sku}, 数量: {len(goods_sku)}"
+                )
+                if not self.cabinet_store.put_goods_to_slot(actual_location, goods_sku):
+                    raise RuntimeError(
+                        f"库位写入失败: {actual_location}，请人工核对现场库存"
                     )
-                    self.cabinet_store.put_goods_to_slot(
-                        actual_location, pg.good_sku)
-            else:
-                # 该层只有后区货物，传送带将货物送到前区，映射 3→1, 4→2
-                for pg in layer_put_goods[layer]:
-                    original = pg.storage_location
-                    original_pos = original[2]
-                    actual_pos = back_to_front_map.get(
-                        original_pos, original_pos)
-                    actual_location = f"{station_prefix}{layer}{actual_pos}"
-                    logger.info(
-                        f"写入库位: {actual_location} (原始: {original}), "
-                        f"SKU: {pg.good_sku}, 数量: {pg.abr_count}"
-                    )
-                    self.cabinet_store.put_goods_to_slot(
-                        actual_location, pg.good_sku)
 
-        # 任务执行完毕，修改任务机状态，将任务在任务管理器中的状态调整至完成
-        self.state_machine.transition(station_id, StationState.DELIVERED, reason="放货完成")
-        self.taskmanager.complete_task(queuetask.task_id)
+            self._transition_or_raise(station_code, StationState.DELIVERED, "放货完成")
+            self.taskmanager.complete_task(queuetask.task_id)
+            self.state_machine.transition(station_code, StationState.IDLE, reason="放货任务已释放")
+        except Exception as exc:
+            logger.error(f"放货任务执行失败: task_id={queuetask.task_id}, error={exc}")
+            self._fail_running_task(queuetask, [station_code], exc)
 
     def _outbound_task_processing(self, queuetask: QueueTask) -> None:
 
@@ -238,22 +249,17 @@ class Task_Processing:
         self.taskmanager.remove_pending(queuetask.task_id)
         self.taskmanager.add_to_running(queuetask)
 
-        self.state_machine.transition("A", StationState.OUTBOUND, reason="进行出库任务")
-        self.state_machine.transition("B", StationState.OUTBOUND, reason="进行出库任务")
-        self.state_machine.transition("C", StationState.OUTBOUND, reason="进行出库任务")
         try:
+            for station_code in ("A", "B", "C"):
+                self._transition_or_raise(station_code, StationState.OUTBOUND, "进行出库任务")
             # 按照Outboundplan计划执行任务
             self._execute_plan(outboundplan)
+            for station_code in ("A", "B", "C"):
+                self._transition_or_raise(station_code, StationState.DONE, "任务完成")
+            self.taskmanager.complete_task(queuetask.task_id)
         except Exception as exc:
             logger.error(f"出库任务执行失败: task_id={queuetask.task_id}, error={exc}")
-            self.state_machine.transition(
-                queuetask.task.station_id, StationState.ERROR, reason="出库任务执行失败")
-            raise
-
-        self.taskmanager.complete_task(queuetask.task_id)
-        self.state_machine.transition("A", StationState.DONE, reason="任务完成")
-        self.state_machine.transition("B", StationState.DONE, reason="任务完成")
-        self.state_machine.transition("C", StationState.DONE, reason="任务完成")
+            self._fail_running_task(queuetask, ["A", "B", "C"], exc)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -348,6 +354,7 @@ class Task_Processing:
             f"total_batches={len(outboundplan.batches)}, "
             f"total_goods={outboundplan.total_goods}"
         )
+        return_remaining_after_batches = self._return_remaining_boxes_batch_numbers(outboundplan)
 
         for batch in outboundplan.batches:
             if self._stop_event.is_set():
@@ -356,12 +363,34 @@ class Task_Processing:
             # strategy 可能在计划中已将后排货物按补位后的前排库位安排出库。
             # 执行到该批次前，必须先让真实设备完成补位，并同步本地库位库存。
             self._execute_required_front_refill_before_batch(batch)
-            self._execute_batch(batch)
+            self._execute_batch(
+                batch,
+                return_remaining_boxes=batch.batch_no in return_remaining_after_batches,
+            )
 
         logger.info(f"出库计划执行完成: task_id={outboundplan.task_id}")
 
+    def _return_remaining_boxes_batch_numbers(self, outboundplan: OutboundPlan) -> set[int]:
+        return_batches: set[int] = set()
+        for batch in outboundplan.batches:
+            command_actions = [
+                action
+                for station_plan in batch.station_plans
+                for action in station_plan.actions
+                if action.action_type == "pick" and action.send_to_plc
+            ]
+            if not command_actions:
+                continue
+            if not any(action.picked_count > action.place_count for action in command_actions):
+                continue
+
+            # 同一波次必须等待需要落线次数最多的夹爪完成，才能统一触发回柜。
+            wave_duration = max(action.place_count for action in command_actions)
+            return_batches.add(batch.batch_no + wave_duration - 1)
+        return return_batches
+
     # 解析出库批次并执行
-    def _execute_batch(self, batch: OutboundBatch) -> None:
+    def _execute_batch(self, batch: OutboundBatch, return_remaining_boxes: bool = False) -> None:
         placed_count = self._count_batch_placed_items(batch)
         if placed_count != batch.outbound_count:
             raise ValueError(
@@ -406,6 +435,9 @@ class Task_Processing:
             raise ValueError(f"批次 {batch.batch_no} 有出库数量但没有可执行夹爪动作")
 
         self._wait_outbound_batch_complete(batch)
+        if return_remaining_boxes:
+            self.plc_service.command_return_remaining_boxes()
+            logger.info(f"批次 {batch.batch_no} 同步波次落线完成，已触发剩余鞋盒放回收纳柜")
         self._update_cabinet_store_after_batch(batch)
 
         logger.info(f"批次 {batch.batch_no} 执行完成")

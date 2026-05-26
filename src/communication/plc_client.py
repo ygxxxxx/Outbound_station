@@ -98,7 +98,7 @@ class PLC_Client:
         self._ensure_connection()
         with self._lock:
             try:
-                result = self._client.read_holding_registers(address, count=count, device_id=_slave)
+                result = self._client.read_holding_registers(address, count=count, slave=_slave)
                 if result.isError():
                     logger.error(f"读取保持寄存器失败: {result}")
                     raise PLCCommunicationError(
@@ -119,7 +119,7 @@ class PLC_Client:
         self._ensure_connection()
         with self._lock:
             try:
-                result = self._client.write_registers(address, values, device_id=_slave)
+                result = self._client.write_registers(address, values, slave=_slave)
                 if result.isError():
                     logger.error(f"写入保持寄存器失败: {result}")
                     raise PLCCommunicationError(
@@ -140,7 +140,7 @@ class PLC_Client:
         self._ensure_connection()
         with self._lock:
             try:
-                result = self._client.read_input_registers(address, count=count, device_id=_slave)
+                result = self._client.read_input_registers(address, count=count, slave=_slave)
                 if result.isError():
                     logger.error(f"读取输入寄存器失败: {result}")
                     raise PLCCommunicationError(
@@ -161,7 +161,7 @@ class PLC_Client:
         self._ensure_connection()
         with self._lock:
             try:
-                result = self._client.read_coils(address, count=count, device_id=_slave)
+                result = self._client.read_coils(address, count=count, slave=_slave)
                 if result.isError():
                     logger.error(f"读取线圈失败: {result}")
                     raise PLCCommunicationError(
@@ -182,7 +182,7 @@ class PLC_Client:
         self._ensure_connection()
         with self._lock:
             try:
-                result = self._client.write_coil(address, value, device_id=_slave)
+                result = self._client.write_coil(address, value, slave=_slave)
                 if result.isError():
                     logger.error(f"写入线圈失败: {result}")
                     raise PLCCommunicationError(
@@ -203,7 +203,7 @@ class PLC_Client:
         self._ensure_connection()
         with self._lock:
             try:
-                result = self._client.write_coils(address, values, device_id=_slave)
+                result = self._client.write_coils(address, values, slave=_slave)
                 if result.isError():
                     logger.error(f"写入线圈失败: {result}")
                     raise PLCCommunicationError(
@@ -224,7 +224,7 @@ class PLC_Client:
         self._ensure_connection()
         with self._lock:
             try:
-                result = self._client.read_discrete_inputs(address, count=count, device_id=_slave)
+                result = self._client.read_discrete_inputs(address, count=count, slave=_slave)
                 if result.isError():
                     logger.error(f"读取离散输入失败: {result}")
                     raise PLCCommunicationError(

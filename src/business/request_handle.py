@@ -8,9 +8,14 @@ from src.utils.logger import logger
 from src.utils.response import build_common_response
 
 
+import re
 import time
 
 logger = logger.bind(tag="Request_Handle")
+
+_VALID_TASK_TYPES = {"putaway", "outbound"}
+_VALID_STATION_IDS = {"A", "B", "C"}
+_STORAGE_LOCATION_RE = re.compile(r"^[ABC][1-4][1-4]$")
 
 
 # 将接收到的信息进行实例化存入数据模型
@@ -45,6 +50,38 @@ def parse_outbound_task(body_dict: dict) -> OutboundTask:
         packages = packages,
         put_goods = put_goods,
     )
+
+
+def validate_task(task: OutboundTask) -> None:
+    if not isinstance(task.task_id, str) or not task.task_id.strip():
+        raise ValueError("task_id 不能为空")
+    if task.task_types not in _VALID_TASK_TYPES:
+        raise ValueError(f"不支持的任务类型: {task.task_types}")
+    if task.station_id not in _VALID_STATION_IDS:
+        raise ValueError(f"非法工作站编号: {task.station_id}")
+
+    if task.task_types == "putaway":
+        for goods in task.put_goods:
+            location = goods.storage_location
+            if not isinstance(location, str) or not _STORAGE_LOCATION_RE.fullmatch(location):
+                raise ValueError(f"非法放货库位: {location}")
+            if location[0] != task.station_id:
+                raise ValueError(f"库位 {location} 不属于工作站 {task.station_id}")
+            if not isinstance(goods.abr_count, int) or goods.abr_count < 0:
+                raise ValueError(f"库位 {location} 的 abr_count 非法")
+            if not isinstance(goods.good_sku, list):
+                raise ValueError(f"库位 {location} 的 good_sku 必须为列表")
+            if goods.abr_count != len(goods.good_sku):
+                raise ValueError(f"库位 {location} 的 abr_count 与 SKU 数量不一致")
+
+    if task.task_types == "outbound":
+        if not isinstance(task.packages_count, int) or task.packages_count != len(task.packages):
+            raise ValueError("package_count 与 packages 数量不一致")
+        for package in task.packages:
+            if not isinstance(package.goods, list):
+                raise ValueError(f"包裹 {package.package_id} 的 goods 必须为列表")
+            if not isinstance(package.count, int) or package.count != len(package.goods):
+                raise ValueError(f"包裹 {package.package_id} 的 count 与 SKU 数量不一致")
 
 
 # 处理状态端口接收到的请求
@@ -102,6 +139,9 @@ def handle_task_request(task_manager: TaskManager, state_machine: StateMachine, 
         if cmd == CmdType.OUTBOUND_TASK_DISPATCH_REQ:               # 收到RCS下发的任务
             try:
                 task = parse_outbound_task(body_dict)  # 将任务导入数据模型
+                validate_task(task)
+                if task_manager.has_task_id(task.task_id):
+                    return build_common_response(ret_code=-1, err_msg=f"重复任务: {task.task_id}")
                 queue_task = QueueTask(task)
 
             except (KeyError, ValueError, TypeError) as e:
@@ -117,7 +157,8 @@ def handle_task_request(task_manager: TaskManager, state_machine: StateMachine, 
                     state_machine.transition(
                         sid, StationState.READY, reason="收到出库任务"
                     )
-            task_manager.add_to_pending(queue_task)
+            if not task_manager.add_to_pending(queue_task):
+                return build_common_response(ret_code=-1, err_msg=f"重复任务: {task.task_id}")
             logger.info(f"收到任务: {task.task_id}")
             return build_common_response()
 

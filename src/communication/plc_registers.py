@@ -323,13 +323,14 @@ class OutboundAddr:
     BATCH_COUNT = 63
     COMPLETE_FLAG = 64
     PHOTO_COUNT = 65
+    RETURN_REMAINING_BOXES = 72
 
 # 全局地址区间 
 class RegisterRange:
 
     CTRL_START = 0           # 控制区起始地址
-    CTRL_END = 71            # 控制区结束地址
-    CTRL_COUNT = 72          # 控制区寄存器总数
+    CTRL_END = 72            # 控制区结束地址
+    CTRL_COUNT = 73          # 控制区寄存器总数
 
     STATUS_START = 100       # 状态区起始地址
     STATUS_END = 166         # 状态区结束地址

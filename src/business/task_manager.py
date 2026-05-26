@@ -18,6 +18,7 @@ class QueueTask:
         self.start_time = None
         self.end_time = None
         self.retry_count = 0
+        self.error_msg = ""
 
 class TaskManager:
     def __init__(self):
@@ -26,16 +27,26 @@ class TaskManager:
         self._pending: deque[QueueTask] = deque()
         self._task: dict[str, QueueTask] = {}
         self._last_completed: QueueTask | None = None
+        self._known_task_ids: set[str] = set()
 
         self.rlock = threading.RLock()
 
         logger.info("任务管理器初始化完成")
 
     # 添加新任务到待处理队列
-    def add_to_pending(self, task: QueueTask) -> None:
+    def add_to_pending(self, task: QueueTask) -> bool:
         with self.rlock:
+            if task.task_id in self._known_task_ids:
+                logger.warning(f"重复任务拒绝入队: {task.task_id}")
+                return False
+            self._known_task_ids.add(task.task_id)
             self._pending.append(task)
             logger.info(f"新任务加入待处理队列: {task.task_id}")
+            return True
+
+    def has_task_id(self, task_id: str) -> bool:
+        with self.rlock:
+            return task_id in self._known_task_ids
 
     # 从待处理队列移除任务
     def remove_pending(self, task_id: str) -> QueueTask:
@@ -71,6 +82,19 @@ class TaskManager:
             self._last_completed = task
             del self._task[task_id]
 
+    def fail_task(self, task_id: str, error_msg: str) -> None:
+        with self.rlock:
+            task = self._task.get(task_id)
+            if task is None:
+                logger.warning(f"fail_task 未找到任务: {task_id}")
+                return
+            task.status = "failed"
+            task.error_msg = error_msg
+            task.end_time = int(time.time() * 1000)
+            self._last_completed = task
+            del self._task[task_id]
+            logger.error(f"任务失败: {task_id}, error={error_msg}")
+
     # 返回任务执行状态
     def get_current_task_detail(self) -> dict | None:
         with self.rlock:
@@ -88,7 +112,7 @@ class TaskManager:
                 return {
                     "task_id": t.task_id,
                     "task_types": t.task_types,
-                    "status": "completed",
+                    "status": t.status,
                     "total_packages": t.total_packages,
                     "finish_time": t.end_time,
                 }

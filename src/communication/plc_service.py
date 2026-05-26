@@ -304,6 +304,15 @@ class PLC_Service:
         logger.info(f"已下发每批次鞋盒出库数量: {count}")
         return True
 
+    # 触发当前同步波次中夹爪上的剩余鞋盒放回原收纳柜。
+    def command_return_remaining_boxes(self) -> bool:
+        self._plc_client.write_holding_registers(OutboundAddr.RETURN_REMAINING_BOXES, [1])
+        logger.info(
+            f"剩余鞋盒回柜寄存器写入: "
+            f"D{OutboundAddr.RETURN_REMAINING_BOXES}(return_remaining_boxes)=1"
+        )
+        return True
+
     # 阅读出库完成标志
     def read_outbound_complete(self) -> bool:
         result = self._plc_client.read_holding_registers(OutboundAddr.COMPLETE_FLAG, 1)
