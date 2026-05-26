@@ -25,6 +25,7 @@ class TaskManager:
         # 初始化一个任务队列（用于保存刚接收到的任务），一个任务字典（用于保存正在执行的任务和已经完成的任务）
         self._pending: deque[QueueTask] = deque()
         self._task: dict[str, QueueTask] = {}
+        self._last_completed: QueueTask | None = None
 
         self.rlock = threading.RLock()
 
@@ -53,6 +54,7 @@ class TaskManager:
             task.status = "executing"
             task.start_time = (int(time.time() * 1000))
             self._task[task.task_id] = task
+            self._last_completed = None
             logger.debug(f"任务开始执行 taskid = {task.task_id}")
 
     # 任务完成状态切换，将已经完成的任务切换状态
@@ -66,19 +68,28 @@ class TaskManager:
                 task.status = "completed"
                 task.end_time = int(time.time() * 1000)
                 logger.info(f"任务完成: {task_id}")
-            # 清理已完成任务
-            completed_keys = [k for k, t in self._task.items() if t.status == "completed"]
-            for key in completed_keys:
-                del self._task[key]
+            self._last_completed = task
+            del self._task[task_id]
 
-    # 查询任务执行状态
-    def get_current_task_detail(self) -> dict:
+    # 返回任务执行状态
+    def get_current_task_detail(self) -> dict | None:
         with self.rlock:
-            for key, t in self._task.items():
+            for t in self._task.values():
                 if t.status == "executing":
                     return {
                         "task_id": t.task_id,
-                        "status": t.status,
+                        "task_types": t.task_types,
+                        "status": "executing",
                         "total_packages": t.total_packages,
+                        "finish_time": t.end_time,
                     }
-                
+            if self._last_completed is not None:
+                t = self._last_completed
+                return {
+                    "task_id": t.task_id,
+                    "task_types": t.task_types,
+                    "status": "completed",
+                    "total_packages": t.total_packages,
+                    "finish_time": t.end_time,
+                }
+        return None

@@ -49,15 +49,12 @@ class Task_Processing:
 
             try:
                 logger.info(f"开始解析任务：{queuetask.task_id}")
-                self.state_machine.transition(
-                    queuetask.task.station_id, StationState.READY, reason="解析任务")
                 # 解析任务类型
                 if queuetask.task_types == "putaway":
                     self._putaway_task_processing(queuetask)
 
                 elif queuetask.task_types == "outbound":
-                    self._outbound_task_processing(
-                        queuetask)  # 如果是出库任务进出库任务处理函数
+                    self._outbound_task_processing(queuetask)  # 如果是出库任务进出库任务处理函数
 
             except Exception as e:
                 with self.taskmanager.rlock:
@@ -86,6 +83,7 @@ class Task_Processing:
             return int(storage_location[2])
         return 0
 
+    # 放货处理
     def _putaway_task_processing(self, queuetask: QueueTask) -> None:
         logger.info(f"开始处理放货任务{queuetask.task_id}")
 
@@ -135,8 +133,7 @@ class Task_Processing:
 
         # 开始执行任务
         self.plc_service.command_cabinet_place(station_id)
-        self.state_machine.transition(
-            station_id, StationState.WAITING_DELIVERY, reason="放货任务开始")
+        self.state_machine.transition(station_id, StationState.WAITING_DELIVERY, reason="放货任务开始")
 
         # 超时时间戳
         total_timeout = time.time() + 60
@@ -144,8 +141,7 @@ class Task_Processing:
             # 触发急停，停止放货
             if self.plc_service.is_emergency_stop():
                 logger.error(f"工作站{station_id} 放货过程中急停触发")
-                self.state_machine.transition(
-                    station_id, StationState.ERROR, reason="急停")
+                self.state_machine.transition(station_id, StationState.ERROR, reason="急停")
                 return
 
             # 如果没有都到位则标志位会变成False，光电都触发则保持True
@@ -172,8 +168,7 @@ class Task_Processing:
             for layer in sorted(goods_layers):
                 if self.plc_service.is_cabinet_timeout(station_id, layer):
                     logger.error(f"工作站{station_id} {layer}层传送带超时，光电未检测到货物")
-                    self.state_machine.transition(
-                        station_id, StationState.ERROR, reason=f"{layer}层放货超时")
+                    self.state_machine.transition(station_id, StationState.ERROR, reason=f"{layer}层放货超时")
                     return
 
             # 如果标志位是True，说明光电都按照货物位置正常触发了
@@ -183,8 +178,7 @@ class Task_Processing:
 
             if time.time() > total_timeout:
                 logger.error(f"工作站{station_id} 放货超时")
-                self.state_machine.transition(
-                    queuetask.task.station_id, StationState.ERROR, reason="放货超时")
+                self.state_machine.transition(queuetask.task.station_id, StationState.ERROR, reason="放货超时")
                 return
 
             self._stop_event.wait(timeout=0.2)
@@ -231,8 +225,7 @@ class Task_Processing:
                         actual_location, pg.good_sku)
 
         # 任务执行完毕，修改任务机状态，将任务在任务管理器中的状态调整至完成
-        self.state_machine.transition(
-            station_id, StationState.DELIVERED, reason="放货完成")
+        self.state_machine.transition(station_id, StationState.DELIVERED, reason="放货完成")
         self.taskmanager.complete_task(queuetask.task_id)
 
     def _outbound_task_processing(self, queuetask: QueueTask) -> None:
@@ -245,9 +238,9 @@ class Task_Processing:
         self.taskmanager.remove_pending(queuetask.task_id)
         self.taskmanager.add_to_running(queuetask)
 
-        self.state_machine.transition(
-            queuetask.task.station_id, StationState.OUTBOUND, reason="进行出库任务")
-
+        self.state_machine.transition("A", StationState.OUTBOUND, reason="进行出库任务")
+        self.state_machine.transition("B", StationState.OUTBOUND, reason="进行出库任务")
+        self.state_machine.transition("C", StationState.OUTBOUND, reason="进行出库任务")
         try:
             # 按照Outboundplan计划执行任务
             self._execute_plan(outboundplan)
@@ -258,8 +251,9 @@ class Task_Processing:
             raise
 
         self.taskmanager.complete_task(queuetask.task_id)
-        self.state_machine.transition(
-            queuetask.task.station_id, StationState.DONE, reason="任务完成")
+        self.state_machine.transition("A", StationState.DONE, reason="任务完成")
+        self.state_machine.transition("B", StationState.DONE, reason="任务完成")
+        self.state_machine.transition("C", StationState.DONE, reason="任务完成")
 
     def stop(self) -> None:
         self._stop_event.set()

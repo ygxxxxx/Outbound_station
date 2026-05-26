@@ -99,7 +99,7 @@ def handle_status_request(state_machine: StateMachine, plc_service: PLC_Service,
 # 处理任务端口接收到的请求
 def handle_task_request(task_manager: TaskManager, state_machine: StateMachine, plc_service: PLC_Service, cmd: int, body_dict: dict) -> dict:
     try:
-        if cmd == CmdType.OUTBOUND_TASK_DISPATCH_REQ:               # 收到RCS下发的出库任务
+        if cmd == CmdType.OUTBOUND_TASK_DISPATCH_REQ:               # 收到RCS下发的任务
             try:
                 task = parse_outbound_task(body_dict)  # 将任务导入数据模型
                 queue_task = QueueTask(task)
@@ -108,7 +108,15 @@ def handle_task_request(task_manager: TaskManager, state_machine: StateMachine, 
                 logger.error(f"任务解析失败{e}")
                 return build_common_response(ret_code=-1, err_msg=f"任务数据格式错误: {e}")
             
-            state_machine.transition(body_dict.get("station_id", "A"), StationState.READY, reason="收到任务")
+            if task.task_types == "putaway":
+                state_machine.transition(
+                    task.station_id, StationState.READY, reason="收到放货任务"
+                )
+            elif task.task_types == "outbound":
+                for sid in state_machine.get_all_states():
+                    state_machine.transition(
+                        sid, StationState.READY, reason="收到出库任务"
+                    )
             task_manager.add_to_pending(queue_task)
             logger.info(f"收到任务: {task.task_id}")
             return build_common_response()

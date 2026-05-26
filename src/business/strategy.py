@@ -21,6 +21,26 @@ BACK_TO_FRONT_POSITION = {3: 1, 4: 2}
 STATION_CODES = ("A", "B", "C")
 LOCAL_GRIPPER_IDS = (1, 2)
 
+# 单件包裹合批时的库位顺序：先使用本轮还没有参与出库的全局夹爪。
+# 这里覆盖 A/B/C 三个工作站的六个夹爪，不局限于同一个工作站内部的两个夹爪。
+def slot_selection_sort_key(
+    location_code: str,
+    avoided_grippers: set[int],
+) -> tuple[int, tuple[str, int, int]]:
+    if not is_reachable_slot(location_code):
+        return 2, location_sort_key(location_code)
+
+    station_code, _, position = CabinetStore.parse_location(location_code)
+    selected_gripper_id = global_gripper_id(
+        station_id_from_code(station_code),
+        gripper_id_from_position(position),
+    )
+
+    return (
+        1 if selected_gripper_id in avoided_grippers else 0,
+        location_sort_key(location_code),
+    )
+
 
 def _slot_clearance_sort_key(
     location_code: str,
@@ -113,6 +133,8 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
     package_infos: list[PackagePlanInfo] = []
     last_target_line: str | None = None
     same_line_batch_count = 0
+    single_wave_line: str | None = None
+    single_wave_grippers: set[int] = set()
     
     while pending_packages:
         candidate_infos: list[PackagePlanInfo] = []
@@ -138,14 +160,39 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
                 same_line_batch_count = same_line_batch_count,
             )
             selected_package = selected_info.package
+
+            # 同一流水线的单件包裹不需要独占，应优先铺满 A/B/C 中能够供货的全局夹爪。
+            # 如果单件包裹数量超过本批最多六个可用夹爪，再让已经整库位夹货的夹爪
+            # 在后续批次继续放置剩余货物。例如六个夹爪都能提供目标 SKU 时，第一批
+            # 应最多并行出六个单件包裹，而不是持续只使用排序最靠前的一个夹爪。
+            if is_single_package_info(selected_info):
+                if selected_info.target_line != single_wave_line:
+                    single_wave_line = selected_info.target_line
+                    single_wave_grippers = set()
+                avoided_grippers = single_wave_grippers
+            else:
+                single_wave_line = None
+                single_wave_grippers = set()
+                avoided_grippers = set()
+
             selected_slot_picks = choose_slots_for_package(
                 package = selected_package,
                 simulated_inventory = simulated_inventory,
                 mutate_inventory = True,
+                avoid_global_grippers = avoided_grippers,
             )
             selected_info = build_package_info(selected_package, selected_slot_picks)
             package_infos.append(selected_info)
             pending_packages.remove(selected_package)
+
+            if is_single_package_info(selected_info):
+                selected_gripper_id = selected_info.slot_picks[0].global_gripper_id
+                if selected_gripper_id in single_wave_grippers:
+                    # 所有可匹配夹爪都已经尝试过或当前 SKU 只能由该夹爪提供，
+                    # 该动作成为下一放置轮的起点，后续单件再优先选择其他夹爪。
+                    single_wave_grippers = {selected_gripper_id}
+                else:
+                    single_wave_grippers.add(selected_gripper_id)
 
             selected_batch_count = estimate_package_batch_count(selected_info)
             if selected_info.target_line == last_target_line:
@@ -167,6 +214,7 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
 def choose_slots_for_package(package: Package,
     simulated_inventory: dict[str, list[str]],
     mutate_inventory: bool,
+    avoid_global_grippers: set[int] | None = None,
 ) -> list[SlotPick]:
     # need 保存这个包裹还缺哪些 SKU。
     # Counter 的值会随着已选中的 planned_goods 逐个扣减，扣到 0 后删除。
@@ -174,6 +222,12 @@ def choose_slots_for_package(package: Package,
     selected: list[SlotPick] = []
     selected_locations: list[tuple[str, int]] = []
     location_codes = sorted(simulated_inventory.keys(), key = location_sort_key)
+
+    if avoid_global_grippers:
+        location_codes = sorted(
+            location_codes,
+            key = lambda code: slot_selection_sort_key(code, avoid_global_grippers),
+        )
 
     for location_code in location_codes:
         if not need:

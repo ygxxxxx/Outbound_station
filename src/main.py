@@ -16,21 +16,6 @@ import time
 
 logger = logger.bind(tag="Main")
 
-class _DummyStateMachine:
-    def __init__(self, *args, **kwargs):
-        pass
-    def transition(self, *args, **kwargs):
-        pass
-    def get_task_execution_detail(self):
-        return {}
-    def get_storage_info(self):
-        return {}
-    def get_outbound_station_status(self):
-        return {}
-    def get_workstation_plc_status(self):
-        return {}
-    def clear_cabinet_timeout(self):
-        pass
 
 
 rcs: RCS_Sever = None
@@ -45,7 +30,6 @@ cabinet_store: CabinetStore = None
 def start():
     global rcs, plc, plc_client, state, taskmanager, taskprocessing, cabinet_store
     
-    state = _DummyStateMachine()
     taskmanager = TaskManager()
     cabinet_store = CabinetStore.create(station_prefixes=["A", "B", "C"])
 
@@ -56,6 +40,13 @@ def start():
         timeout = 5
     )
     plc = PLC_Service(plc_client)
+    state = StateMachine(
+        host_id = "OUTBOUND_STATION1",
+        station_ids = ["A", "B", "C"],
+        task_manager = taskmanager,
+        plc_service = plc,
+    )
+    plc.set_fault_check_callback(state.check_plc_faults)
     plc.start_connects()
     plc.start_status_polling()
 

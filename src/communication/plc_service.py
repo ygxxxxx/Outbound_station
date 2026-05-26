@@ -1,5 +1,5 @@
 import time
-from typing import Optional, List, Dict
+from typing import Callable, Optional, List, Dict
 
 from src.utils.logger import logger
 from src.communication.plc_client import PLC_Client
@@ -13,14 +13,24 @@ logger = logger.bind(tag = 'plc_service')
 
 # PLC服务层 -> PLC寄存器，PLC客户端，PLC数据模型
 class PLC_Service:
-    def __init__(self, plc_client: PLC_Client):
+    def __init__(
+        self,
+        plc_client: PLC_Client,
+        fault_check_callback: Optional[Callable[[], None]] = None,
+    ):
         self._plc_client = plc_client
         self._status_data = PLCStatusData()
+        self._fault_check_callback = fault_check_callback
 
     # 返回PLC数据模型
     @property    
     def status(self) -> PLCStatusData:
         return self._status_data
+
+    def set_fault_check_callback(
+        self, callback: Optional[Callable[[], None]]
+    ) -> None:
+        self._fault_check_callback = callback
     
     def start_connects(self) -> None:
         self._plc_client._ensure_connection(max_retries= -1, interval = 3.0, backoff = 1.0)
@@ -46,6 +56,8 @@ class PLC_Service:
         registers = data.get("status_all")
         if registers is not None:
             self._status_data.update_from_registers(registers, RegisterRange.STATUS_START)  # 更新PLC数据模型
+        if self._fault_check_callback:
+            self._fault_check_callback()  # 状态已更新，通知状态机检查故障
 
     # 停止状态轮询
     def stop_status_polling(self) -> None:
@@ -81,6 +93,12 @@ class PLC_Service:
         self._plc_client.write_holding_registers(count_addr, [count])
         self._plc_client.write_holding_registers(size_addr, [size])
         self._plc_client.write_holding_registers(place_count_addr, [place_count])
+        logger.info(
+            f"夹爪{gripper_id}参数寄存器写入: "
+            f"D{count_addr}(count)={count}, "
+            f"D{size_addr}(size)={size}, "
+            f"D{place_count_addr}(place_count)={place_count}"
+        )
         logger.info(f"夹爪{gripper_id}: 已写入数量={count}, 尺寸={size},放置货物数量={place_count}")
 
         if delay_before_pos < 0.5:
@@ -88,6 +106,9 @@ class PLC_Service:
         time.sleep(delay_before_pos)
 
         self._plc_client.write_holding_registers(pos_addr, [layer])
+        logger.info(
+            f"夹爪{gripper_id}触发寄存器写入: D{pos_addr}(position/layer)={layer}"
+        )
         logger.info(f"夹爪{gripper_id}: 已写入抓取位置=第{layer}层, 夹爪开始执行")
         return True
 
@@ -97,6 +118,10 @@ class PLC_Service:
             no_task = 0 if gripper_id in active_gripper_ids else 1
             addr = GripperAddr.no_task_addr(gripper_id)
             self._plc_client.write_holding_registers(addr, [no_task])
+            logger.info(
+                f"夹爪{gripper_id}任务状态寄存器写入: "
+                f"D{addr}(no_task)={no_task}"
+            )
 
         idle_gripper_ids = [
             gripper_id
@@ -136,9 +161,18 @@ class PLC_Service:
             self._plc_client.write_holding_registers(count_addr, [cmd["count"]])
             self._plc_client.write_holding_registers(size_addr, [cmd["size"]])
             self._plc_client.write_holding_registers(place_count_addr, [cmd["place_count"]])
+            logger.info(
+                f"夹爪{gid}参数寄存器写入: "
+                f"D{count_addr}(count)={cmd['count']}, "
+                f"D{size_addr}(size)={cmd['size']}, "
+                f"D{place_count_addr}(place_count)={cmd['place_count']}"
+            )
         # 本批次出库数量
         if outbound_count > 0:
             self._plc_client.write_holding_registers(OutboundAddr.BATCH_COUNT, [outbound_count])    
+            logger.info(
+                f"出库批次寄存器写入: D{OutboundAddr.BATCH_COUNT}(outbound_count)={outbound_count}"
+            )
         
         if delay_before_pos < 0.5:
             delay_before_pos = 0.5
@@ -148,6 +182,10 @@ class PLC_Service:
             gid = cmd["gripper_id"]
             pos_addr = GripperAddr.pos_addr(gid)
             self._plc_client.write_holding_registers(pos_addr, [cmd["layer"]])
+            logger.info(
+                f"夹爪{gid}触发寄存器写入: "
+                f"D{pos_addr}(position/layer)={cmd['layer']}"
+            )
 
         logger.info(f"批量下发 {len(commands)} 个夹爪指令")
         return True
@@ -260,6 +298,9 @@ class PLC_Service:
         if not 1 <= count <= 6:
             raise ParameterError(message="出库批次数量超出范围", expected_value="1~6", actual_value=str(count))
         self._plc_client.write_holding_registers(OutboundAddr.BATCH_COUNT, [count])
+        logger.info(
+            f"出库批次寄存器写入: D{OutboundAddr.BATCH_COUNT}(outbound_count)={count}"
+        )
         logger.info(f"已下发每批次鞋盒出库数量: {count}")
         return True
 
