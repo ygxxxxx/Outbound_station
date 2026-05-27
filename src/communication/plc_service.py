@@ -3,7 +3,7 @@ from typing import Callable, Optional, List, Dict
 
 from src.utils.logger import logger
 from src.communication.plc_client import PLC_Client
-from src.communication.plc_registers import GripperAddr, CabinetCtrlAddr, StatusAddr, RegisterRange, OutboundAddr
+from src.communication.plc_registers import GripperAddr, CabinetCtrlAddr, StatusAddr, RegisterRange, OutboundAddr, LocationMoveAddr
 from src.models.plc_data_model import PLCStatusData, GripperState, StationState
 from src.exception.exception import ParameterError
 
@@ -23,7 +23,7 @@ class PLC_Service:
         self._fault_check_callback = fault_check_callback
 
     # 返回PLC数据模型
-    @property    
+    @property
     def status(self) -> PLCStatusData:
         return self._status_data
 
@@ -31,7 +31,7 @@ class PLC_Service:
         self, callback: Optional[Callable[[], None]]
     ) -> None:
         self._fault_check_callback = callback
-    
+
     def start_connects(self) -> None:
         self._plc_client._ensure_connection(max_retries= -1, interval = 3.0, backoff = 1.0)
 
@@ -79,7 +79,7 @@ class PLC_Service:
             raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
         if not 1 <= count <= 4:
             raise ParameterError(message="数量超出范围", expected_value="1~4", actual_value=str(count))
-        
+
         count_addr = GripperAddr.count_addr(gripper_id)
         size_addr = GripperAddr.size_addr(gripper_id)
         pos_addr = GripperAddr.pos_addr(gripper_id)
@@ -169,11 +169,11 @@ class PLC_Service:
             )
         # 本批次出库数量
         if outbound_count > 0:
-            self._plc_client.write_holding_registers(OutboundAddr.BATCH_COUNT, [outbound_count])    
+            self._plc_client.write_holding_registers(OutboundAddr.BATCH_COUNT, [outbound_count])
             logger.info(
                 f"出库批次寄存器写入: D{OutboundAddr.BATCH_COUNT}(outbound_count)={outbound_count}"
             )
-        
+
         if delay_before_pos < 0.5:
             delay_before_pos = 0.5
         time.sleep(delay_before_pos)
@@ -189,7 +189,7 @@ class PLC_Service:
 
         logger.info(f"批量下发 {len(commands)} 个夹爪指令")
         return True
-    
+
     # 放货库位传送带全部转动指令
     def command_cabinet_place(self, station_id: int) -> bool:
         addr = CabinetCtrlAddr.place_addr(station_id)
@@ -203,14 +203,14 @@ class PLC_Service:
         self._plc_client.write_holding_registers(addr, [1])
         logger.info(f"工作站{station_id} {layer}层: 已下发跳过传送带指令(无货物)")
         return True
-    
+
     # 库位传送带转动指令
     def command_cabinet_forward(self, station_id: int, layer: int) -> bool:
         addr = CabinetCtrlAddr.forward_addr(station_id, layer)
         self._plc_client.write_holding_registers(addr, [1])
         logger.info(f"工作站{station_id} {layer}层: 已下发库位转动指令")
         return True
-    
+
     # 库位传送带后退命令
     def command_cabinet_backward(self, station_id: int, layer: int) -> bool:
         addr = CabinetCtrlAddr.backward_addr(station_id, layer)
@@ -219,15 +219,15 @@ class PLC_Service:
         return True
 
     # 获取指定夹爪的当前状态
-    def get_gripper_state(self, gripper_id: int) -> Optional[GripperState]: 
+    def get_gripper_state(self, gripper_id: int) -> Optional[GripperState]:
         return self._status_data.get_gripper_state(gripper_id)
 
     # 获取所有夹爪的当前状态
-    def get_all_gripper_states(self) -> List[GripperState]:  
+    def get_all_gripper_states(self) -> List[GripperState]:
         return self._status_data.get_all_gripper_states()
 
     # 判断指定夹爪是否在运行中
-    def is_gripper_running(self, gripper_id: int) -> bool:  
+    def is_gripper_running(self, gripper_id: int) -> bool:
         return self._status_data.is_gripper_running(gripper_id)
 
     # 获取指定工作站的完整状态
@@ -236,7 +236,7 @@ class PLC_Service:
 
     def get_all_station_state(self) -> Dict[int, StationState]:
         return self._status_data.get_all_station_states()
-    
+
     # 检查急停是否激活
     def is_emergency_stop(self) -> bool:
         return self._status_data.is_emergency_stop()
@@ -279,7 +279,7 @@ class PLC_Service:
     # 给RCS上报数据
     def get_to_rcs(self) -> dict:
         return self._status_data.to_rcs()
-    
+
     # 清除收纳柜运行超时标志
     def clear_cabinet_timeout(self, station_id: int, layer: int) -> bool:
         addr = StatusAddr.timeout_addr(station_id, layer)
@@ -288,11 +288,11 @@ class PLC_Service:
         return True
 
     # 清除指定工作站所有层的超时标志
-    def clear_all_cabinet_timeouts(self, station_id: int) -> bool: 
+    def clear_all_cabinet_timeouts(self, station_id: int) -> bool:
         for layer in range(1, 5):
             self.clear_cabinet_timeout(station_id, layer)
         return True
-    
+
     # 每批次出库鞋盒数量
     def command_outbound_batch_count(self, count: int) -> bool:
         if not 1 <= count <= 6:
@@ -329,7 +329,7 @@ class PLC_Service:
     def read_outbound_photo_count(self) -> int:
         result = self._plc_client.read_holding_registers(OutboundAddr.PHOTO_COUNT, 1)
         return result[0]
-    
+
 
 if __name__ == "__main__":
     plc = PLC_Client(host = '192.168.1.88', port = 502, slave_id= 1, timeout= 5)
@@ -358,5 +358,32 @@ if __name__ == "__main__":
         plc_service.close()
         logger.info("程序已停止")
 
-    
-    
+# 控制单个夹爪夹取货物移动到其他库位
+def command_location_move(self, gripper_id: int, pick_layer: int, place_layer: int) -> bool:
+    if not 1 <= pick_layer <= 4:
+        raise ParameterError(message="移动抓取层号超出范围", expected_value="1~4", actual_value=str(pick_layer))
+    if not 1 <= place_layer <= 4:
+        raise ParameterError(message="移动放置层号超出范围", expected_value="1~4", actual_value=str(place_layer))
+
+    pick_addr = LocationMoveAddr.move_pick_addr(gripper_id)
+    place_addr = LocationMoveAddr.move_place_addr(gripper_id)
+
+    self._plc_client.write_holding_registers(pick_addr, [pick_layer])
+    self._plc_client.write_holding_registers(place_addr, [place_layer])
+
+    logger.info(
+        f"夹爪{gripper_id}库位移动寄存器写入: "
+        f"D{pick_addr}(pick_layer)={pick_layer}, "
+        f"D{place_addr}(place_layer)={place_layer}"
+    )
+    return True
+
+# 批量库位移动
+def command_location_move_batch(self, moves: list[dict]) -> bool:
+    for move in moves:
+        self.command_location_move(
+            gripper_id=move["gripper_id"],
+            pick_layer=move["pick_layer"],
+            place_layer=move["place_layer"],
+        )
+    return True

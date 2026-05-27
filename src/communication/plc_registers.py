@@ -8,7 +8,7 @@ logger = logger.bind(tag = "plc_registers")
 class GripperAddr:
 
     # 夹爪数量
-    GRIPPER_COUNT = 6 
+    GRIPPER_COUNT = 6
     # 每个夹爪的寄存器数量
     REGISTERS_PER_GRIPPER = 3
 
@@ -65,7 +65,7 @@ class GripperAddr:
     GRIPPER_4_PLACE_COUNT = 36 # 夹爪4放置鞋盒数量
     GRIPPER_5_PLACE_COUNT = 37 # 夹爪5放置鞋盒数量
     GRIPPER_6_PLACE_COUNT = 38 # 夹爪6放置鞋盒数量
-    
+
     # 通过夹爪编号获取该夹爪的放货数量寄存器地址
     @classmethod
     def place_count_addr(cls, gripper_id: int) -> int:
@@ -83,6 +83,25 @@ class GripperAddr:
     def no_task_addr(cls, gripper_id: int) -> int:
         cls._validate_gripper_id(gripper_id)
         return 65 + gripper_id
+
+# 库位移动
+class LocationMoveAddr:
+    MOVE_PICK_START = 73   # 夹爪1移动抓取位置
+    MOVE_PLACE_START = 79  # 夹爪1移动放置位置
+
+
+    @classmethod
+    def move_pick_addr(cls, gripper_id: int) -> int:
+        # gripper_id 1~6 -> D73~D78
+        GripperAddr._validate_gripper_id(gripper_id)
+        return 72 + gripper_id  # 即 (gripper_id - 1) + 73
+
+    @classmethod
+    def move_place_addr(cls, gripper_id: int) -> int:
+        # gripper_id 1~6 -> D79~D84
+        GripperAddr._validate_gripper_id(gripper_id)
+        return 78 + gripper_id  # 即 (gripper_id - 1) + 79
+
 
 
 # 库位传送带寄存器
@@ -138,7 +157,7 @@ class CabinetCtrlAddr:
     WSC_L3_BACK = 61   # 工作站C3层库位传送带后退
     WSC_L4_BACK = 62   # 工作站C4层库位传送带后退
 
- 
+
 
     # 通过工作站编号获取库位集体转动地址
     @classmethod
@@ -160,15 +179,15 @@ class CabinetCtrlAddr:
         cls._validate_station_id(station_id)
         if not 1 <= layer <= 4:
             raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
-        return 38 + (station_id - 1) * 4 + layer  
-    
+        return 38 + (station_id - 1) * 4 + layer
+
     @classmethod
     def backward_addr(cls, station_id: int, layer: int) -> int:
         cls._validate_station_id(station_id)
         if not 1 <= layer <= 4:
             raise ParameterError(message="层号超出范围", expected_value="1~4", actual_value=str(layer))
         return 50 + (station_id - 1) * 4 + layer
-    
+
     @classmethod
     def _validate_station_id(cls, station_id: int):
         if not 1 <= station_id <= cls.STATION_COUNT:
@@ -276,7 +295,7 @@ class StatusAddr:
     WSC_LLF_E = 151 # 工作站C左夹爪升降故障，0为无故障，大于0则轴故障，读取到的数值为故障码
     WSC_RSF_E = 152 # 工作站C右夹爪伸缩故障，0为无故障，大于0则轴故障，读取到的数值为故障码
     WSC_RLF_E = 153 # 工作站C右夹爪升降故障，0为无故障，大于0则轴故障，读取到的数值为故障码
-    
+
     FAULT_START = 142 # 夹爪轴故障寄存器起始地址
     FAULT_COUNT = 12  # 夹爪轴故障寄存器数量
 
@@ -325,12 +344,12 @@ class OutboundAddr:
     PHOTO_COUNT = 65
     RETURN_REMAINING_BOXES = 72
 
-# 全局地址区间 
+# 全局地址区间
 class RegisterRange:
 
     CTRL_START = 0           # 控制区起始地址
-    CTRL_END = 72            # 控制区结束地址
-    CTRL_COUNT = 73          # 控制区寄存器总数
+    CTRL_END = 84            # 控制区结束地址
+    CTRL_COUNT = 85          # 控制区寄存器总数
 
     STATUS_START = 100       # 状态区起始地址
     STATUS_END = 166         # 状态区结束地址
