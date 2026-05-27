@@ -1,25 +1,28 @@
 import socket
 import threading
+import struct
 import json
-
-from datetime import datetime
+import time
 
 from src.utils.logger import logger
 from src.exception.exception import VisionGateCommunicationError
 
 logger = logger.bind(tag="VisionGate")
 
-SEPARATOR = b'\n'
-
+SYNC_BYTE = 0xAC
+PROTO_VERSION = 1
+HEADER_SIZE = 10
+MSG_TYPE_OUTBOUND_REQ = 1000
+MSG_TYPE_OUTBOUND_RES = 11000
+HEADER_FORMAT = '!BBHHI'  
 
 class VisionGateClient:
 
-    def __init__(self, host: str, port: int, on_ack=None):
+    def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
         self.sock: socket.socket | None = None
         self.connected = False
-        self.on_ack = on_ack
 
         self._recv_buffer = b''
         self._recv_thread: threading.Thread | None = None
@@ -27,6 +30,10 @@ class VisionGateClient:
         self._stop_event.set()
 
         self._lock = threading.Lock()
+        self._seq = 0                        
+        self._pending_seq = None             
+        self._response_event = threading.Event()  
+        self._last_response = None    
 
     # 视觉门连接
     def connect(self) -> None:
@@ -55,6 +62,7 @@ class VisionGateClient:
     # 视觉门连接关闭
     def close(self) -> None:
         self._stop_event.set()
+        self._response_event.set()
         if self.sock:
             try:
                 self.sock.close()
@@ -64,37 +72,99 @@ class VisionGateClient:
         self.sock = None
         logger.info(f"关闭视觉门连接: {self.host}:{self.port}")
 
-    # 发送消息
-    def send_goods_list(self, task_id: str, goods_sequence: list[dict]) -> None:
-        msg = self._build_goods_message(task_id, goods_sequence)
-        self._send(msg)
+    # 构建请求
+    def _build_packet(self, msg_type: int, seq: int, body: dict) -> bytes:
 
-    # 处理消息转换成为字节码
-    def _build_goods_message(self, task_id: str, goods_sequence: list[dict]) -> bytes:
-        body = {
-            "task_id": task_id,
-            "goods_sequence": goods_sequence,
-            "sendtime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        }
-        return self._encode(body)
+        json_bytes = json.dumps(body, ensure_ascii=False).encode('utf-8')
 
-    # 编码函数
-    def _encode(self, body_dict: dict) -> bytes:
-        body_json = json.dumps(body_dict, ensure_ascii=False).encode('utf-8')
-        return body_json + SEPARATOR
+        header = struct.pack(
+            HEADER_FORMAT,
+            SYNC_BYTE,
+            PROTO_VERSION,
+            seq,
+            msg_type,
+            len(json_bytes)
+        )
 
-    # 解码函数（静态方法）
+        return header + json_bytes
+    
+    # 解析报文
     @staticmethod
-    def _decode(data: bytes) -> tuple[dict | None, bytes]:
-        if SEPARATOR not in data:
+    def _parse_header(data: bytes) -> tuple[dict | None, bytes]:
+  
+        if len(data) < HEADER_SIZE:
             return None, data
-        line, remain = data.split(SEPARATOR, 1)
-        try:
-            return json.loads(line.decode('utf-8')), remain
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return None, remain
 
-    # 发送函数
+        sync, version, seq, msg_type, data_len = struct.unpack(HEADER_FORMAT, data[:HEADER_SIZE])
+        if sync != SYNC_BYTE:
+            return None, data[1:]  
+    
+        if version != PROTO_VERSION:
+            raise VisionGateCommunicationError(
+                message=f"协议版本不匹配: {version}",
+                device_name="视觉门"
+            )
+        total_len = HEADER_SIZE + data_len
+        if len(data) < total_len:
+            return None, data
+        body_bytes = data[HEADER_SIZE:total_len]
+        remain = data[total_len:]
+
+        if data_len > 0:
+            try:
+                body = json.loads(body_bytes.decode('utf-8'))
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return None, remain 
+        else:
+            body = {}
+        result = {
+            'seq': seq,
+            'msg_type': msg_type,
+            'body': body,
+        }
+        return result, remain
+    
+    # 序号生成
+    def _next_seq(self) -> int:
+        seq = self._seq
+        self._seq = (self._seq + 1) % 65536 
+        return seq
+    
+    # 发送货物列表
+    def send_goods_list(self, goods: list[dict], timeout: float = 5.0) -> dict:
+        seq = self._next_seq()
+        packet = self._build_outbound_packet(seq, goods)
+        self._pending_seq = seq
+        self._response_event.clear()
+        self._send(packet)
+
+        received = self._response_event.wait(timeout)
+        if not received:
+            raise VisionGateCommunicationError(
+                message=f"等待视觉门响应超时: {timeout}秒",
+                device_name="视觉门"
+            )
+        
+        self._pending_seq = None
+        response = self._last_response
+        self._last_response = None
+        return response
+    
+    # 构建出库包裹数据
+    def _build_outbound_packet(self, seq: int, goods: list[dict]) -> bytes:
+        body = {
+            "timestamp": int(time.time() * 1000),   # 13位毫秒时间戳
+            "good_count": len(goods),                # 货物数量
+            "goods": goods,                          # 货物列表
+        }
+        
+        return self._build_packet(
+            msg_type=MSG_TYPE_OUTBOUND_REQ,   # 1000
+            seq=seq,
+            body=body
+        )
+    
+    # 发送数据
     def _send(self, data: bytes) -> None:
         if not self.connected or not self.sock:
             logger.warning(f"视觉门未连接: {self.host}:{self.port}")
@@ -128,55 +198,40 @@ class VisionGateClient:
                 with self._lock:
                     self._recv_buffer += data
                 while True:
-                    msg, self._recv_buffer = self._decode(self._recv_buffer)
-                    if msg is None:
+                    result, self._recv_buffer = self._parse_header(self._recv_buffer)
+                    if result is None:
                         break
-                    self._on_message(msg)
+                    self._on_message(result)
         except OSError as e:
             logger.error(f"视觉门接收异常: {self.host}:{self.port}, 错误: {e}")
             self.connected = False
 
-    # 解析收到信息
-    def _on_message(self, msg: dict) -> None:
-        task_id = msg.get("task_id", "")
-        result = msg.get("result")
-        if result is not None:
-            if result == 0:
-                logger.info(f"视觉门ACK成功: task_id={task_id}")
-            else:
-                logger.warning(f"视觉门ACK失败: task_id={task_id}, result={result}")
-            if self.on_ack:
-                try:
-                    self.on_ack(task_id, result)
-                except Exception as e:
-                    logger.error(f"视觉门ACK回调异常: {e}")
+    # 处理接收消息
+    def _on_message(self, result: dict) -> None:
+        seq = result.get('seq')
+        msg_type = result.get('msg_type')
+        body = result.get('body', {})
+
+        if msg_type != MSG_TYPE_OUTBOUND_RES:   # 11000
+            logger.warning(f"收到非预期报文类型: {msg_type}, 忽略")
+            return
+
+        if seq != self._pending_seq:
+            logger.warning(f"收到不匹配的响应序号: {seq}, 期望: {self._pending_seq}")
+            return
+
+        ret_code = body.get('ret_code', 0)      # 0或缺省=成功
+        create_time = body.get('create_time')
+        err_msg = body.get('err_msg', '')
+
+        if ret_code == 0:
+            logger.info(f"视觉门响应成功: seq={seq}")
         else:
-            logger.debug(f"视觉门收到未知消息: {msg}")
-
-
-if __name__ == "__main__":
-    visiongateclient = VisionGateClient(host = "127.0.0.1", port = 9000)
-    visiongateclient.connect()
-    task_id = "T123456789"
-    goos_sequence = [  
-        {
-            "sequence" : 1,
-            "goods_id" : "SKU-A001",
-            "package_id" : "PKG001",
-            "target_line" : "高速线1"
-        },
-        {
-            "sequence" : 2,
-            "goods_id" : "SKU-A002",
-            "package_id" : "PKG001",
-            "target_line" : "高速线1"
-        },
-        {
-            "sequence" : 3,
-            "goods_id" : "SKU-A003",
-            "package_id" : "PKG002",
-            "target_line" : "高速线2"
+            logger.warning(f"视觉门响应错误: seq={seq}, ret_code={ret_code}, err_msg={err_msg}")
+            
+        self._last_response = {
+            'ret_code': ret_code,
+            'create_time': create_time,
+            'err_msg': err_msg,
         }
-    ]
-    visiongateclient.send_goods_list(task_id = task_id, goods_sequence = goos_sequence)
-    input("按回车退出")
+        self._response_event.set()

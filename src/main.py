@@ -1,7 +1,7 @@
 from src.communication.rcs_sever import RCS_Sever
 from src.communication.plc_client import PLC_Client
 from src.communication.plc_service import PLC_Service
-# from src.communication.vision_gate import VisionGateClient
+from src.communication.vision_gate import VisionGateClient
 from src.business.request_handle import parse_outbound_task, handle_status_request, handle_task_request
 from src.business.state_machine import StateMachine
 from src.business.task_manager import TaskManager
@@ -21,14 +21,14 @@ logger = logger.bind(tag="Main")
 rcs: RCS_Sever = None
 plc: PLC_Service = None
 plc_client: PLC_Client = None
-# vis: VisionGateClient = None
+vis: VisionGateClient = None
 state: StateMachine = None
 taskmanager: TaskManager = None
 taskprocessing: Task_Processing = None
 cabinet_store: CabinetStore = None
 
 def start():
-    global rcs, plc, plc_client, state, taskmanager, taskprocessing, cabinet_store
+    global rcs, plc, plc_client, state, taskmanager, taskprocessing, cabinet_store, vis
     
     taskmanager = TaskManager()
     cabinet_store = CabinetStore.create(station_prefixes=["A", "B", "C"])
@@ -61,10 +61,17 @@ def start():
         on_status_request=on_status,
         on_task_request=on_task,)
     
-    taskprocessing = Task_Processing(taskmanager, plc, state, cabinet_store)
+    vis = VisionGateClient(
+        host = "127.0.0.1",
+        port = 23320,
+    )
+
+    taskprocessing = Task_Processing(taskmanager, plc, state, cabinet_store, vis)
 
     rcs.start()
+    vis.connect()
     taskprocessing.start()
+
 
 
 def stop():

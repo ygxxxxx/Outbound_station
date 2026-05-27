@@ -1,4 +1,5 @@
 from src.communication.plc_service import PLC_Service
+from src.communication.vision_gate import VisionGateClient
 from src.business.state_machine import StateMachine, StationState
 from src.business.strategy import strategy
 from src.business.task_manager import TaskManager, QueueTask
@@ -19,13 +20,16 @@ class Task_Processing:
                  taskmanager: TaskManager = None,
                  plc_service: PLC_Service = None,
                  state_machine: StateMachine = None,
-                 cabinet_store: CabinetStore = None
+                 cabinet_store: CabinetStore = None,
+                 vision_gate: VisionGateClient = None
                  ):
+        
         self.taskmanager = taskmanager
         self.plc_service = plc_service
         self.state_machine = state_machine
         self.cabinet_store = cabinet_store
-
+        self.vision_gate = vision_gate
+        
         self._stop_event = threading.Event()
         
 
@@ -241,19 +245,18 @@ class Task_Processing:
 
     def _outbound_task_processing(self, queuetask: QueueTask) -> None:
 
-        # 将任务放入出库策略当中进行计算，得出Outboundplan
         outboundplan = strategy(queuetask, self.cabinet_store)
         self._log_outbound_plan_detail(outboundplan)
 
-        # 将任务从准备队列转移至正在执行中
+        package_lookup = {p.package_id: p for p in queuetask.task.packages}
+
         self.taskmanager.remove_pending(queuetask.task_id)
         self.taskmanager.add_to_running(queuetask)
 
         try:
             for station_code in ("A", "B", "C"):
                 self._transition_or_raise(station_code, StationState.OUTBOUND, "进行出库任务")
-            # 按照Outboundplan计划执行任务
-            self._execute_plan(outboundplan)
+            self._execute_plan(outboundplan, package_lookup)
             for station_code in ("A", "B", "C"):
                 self._transition_or_raise(station_code, StationState.DONE, "任务完成")
             self.taskmanager.complete_task(queuetask.task_id)
@@ -348,7 +351,7 @@ class Task_Processing:
         logger.info("=" * 80)
 
     # 接受出库计划并解析执行
-    def _execute_plan(self, outboundplan: OutboundPlan) -> None:
+    def _execute_plan(self, outboundplan: OutboundPlan, package_lookup: dict) -> None:
         logger.info(
             f"开始执行出库计划: task_id={outboundplan.task_id}, "
             f"total_batches={len(outboundplan.batches)}, "
@@ -360,11 +363,10 @@ class Task_Processing:
             if self._stop_event.is_set():
                 raise RuntimeError("任务处理已停止，出库计划中断")
 
-            # strategy 可能在计划中已将后排货物按补位后的前排库位安排出库。
-            # 执行到该批次前，必须先让真实设备完成补位，并同步本地库位库存。
             self._execute_required_front_refill_before_batch(batch)
             self._execute_batch(
                 batch,
+                package_lookup=package_lookup,
                 return_remaining_boxes=batch.batch_no in return_remaining_after_batches,
             )
 
@@ -390,7 +392,7 @@ class Task_Processing:
         return return_batches
 
     # 解析出库批次并执行
-    def _execute_batch(self, batch: OutboundBatch, return_remaining_boxes: bool = False) -> None:
+    def _execute_batch(self, batch: OutboundBatch, package_lookup: dict, return_remaining_boxes: bool = False) -> None:
         placed_count = self._count_batch_placed_items(batch)
         if placed_count != batch.outbound_count:
             raise ValueError(
@@ -435,6 +437,7 @@ class Task_Processing:
             raise ValueError(f"批次 {batch.batch_no} 有出库数量但没有可执行夹爪动作")
 
         self._wait_outbound_batch_complete(batch)
+        self._send_batch_to_vision_gate(batch, package_lookup)
         if return_remaining_boxes:
             self.plc_service.command_return_remaining_boxes()
             logger.info(f"批次 {batch.batch_no} 同步波次落线完成，已触发剩余鞋盒放回收纳柜")
@@ -524,6 +527,52 @@ class Task_Processing:
                     f"批次 {batch.batch_no} 已更新库位: "
                     f"location={action.location_code}, removed={placed_skus}"
                 )
+    def _send_batch_to_vision_gate(self, batch: OutboundBatch, package_lookup: dict) -> None:
+        if self.vision_gate is None:
+            return
+
+        goods_list = []
+        for station_plan in batch.station_plans:
+            for action in station_plan.actions:
+                if action.action_type != "pick":
+                    continue
+                for item in action.placed_items:
+                    package = package_lookup.get(item.package_id)
+                    if package is None:
+                        logger.warning(
+                            f"批次 {batch.batch_no} 未找到包裹信息: "
+                            f"package_id={item.package_id}, 跳过该货物"
+                        )
+                        continue
+                    goods_list.append({
+                        "package_id": item.package_id,
+                        "good_sku": item.goods_sku,
+                        "sequence": item.sequence,
+                        "box_type": package.box_type,
+                        "face_sheet": package.face_sheet or "",
+                        "logistics": package.logistics or "",
+                        "manual_process_type": package.manual_process_type or "N",
+                        "packaging_line": package.packaging_line or item.target_line,
+                    })
+
+        if not goods_list:
+            logger.info(f"批次 {batch.batch_no} 无落线货物，跳过视觉门发送")
+            return
+
+        logger.info(
+            f"批次 {batch.batch_no} 发送货物信息到视觉门: "
+            f"good_count={len(goods_list)}"
+        )
+        response = self.vision_gate.send_goods_list(goods_list)
+        ret_code = response.get("ret_code", 0)
+        if ret_code != 0:
+            err_msg = response.get("err_msg", "")
+            raise RuntimeError(
+                f"批次 {batch.batch_no} 视觉门响应错误: "
+                f"ret_code={ret_code}, err_msg={err_msg}"
+            )
+        logger.info(f"批次 {batch.batch_no} 视觉门确认接收成功")
+
     # 统计批次落线数量
 
     def _count_batch_placed_items(self, batch: OutboundBatch) -> int:
