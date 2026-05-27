@@ -59,6 +59,33 @@ class VisionGateClient:
                 device_name=f"视觉门[{self.host}:{self.port}]"
             )
 
+    # 重复连接
+    def connect_with_retry(self, max_retries: int = 0, interval: float = 2.0, backoff: float = 1.0) -> None:
+        retry_count = 0
+        current_interval = interval
+        while True:
+            try:
+                self.connect()
+                return
+            except VisionGateCommunicationError:
+                pass
+
+            retry_count += 1
+            if 0 < max_retries <= retry_count:
+                logger.error(f"视觉门连接失败, 已达最大重试次数{max_retries}: {self.host}:{self.port}")
+                raise VisionGateCommunicationError(
+                    message=f"视觉门连接失败, 已达最大重试次数{max_retries}: {self.host}:{self.port}",
+                    device_name=f"视觉门[{self.host}:{self.port}]"
+                )
+
+            logger.warning(
+                f"视觉门未连接, {current_interval:.1f}秒后重试 "
+                f"({retry_count}/{max_retries if max_retries > 0 else '∞'}): "
+                f"{self.host}:{self.port}"
+            )
+            time.sleep(current_interval)
+            current_interval *= backoff
+
     # 视觉门连接关闭
     def close(self) -> None:
         self._stop_event.set()

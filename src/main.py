@@ -11,6 +11,7 @@ from src.config.settings import config
 from src.utils.logger import logger
 
 from functools import partial
+import threading
 
 import time
 
@@ -46,9 +47,12 @@ def start():
         task_manager = taskmanager,
         plc_service = plc,
     )
+    def _plc_connect_and_poll():
+        plc.start_connects()
+        plc.start_status_polling()
+
     plc.set_fault_check_callback(state.check_plc_faults)
-    plc.start_connects()
-    plc.start_status_polling()
+    threading.Thread(target=_plc_connect_and_poll, daemon=True).start()
 
     on_status = partial(handle_status_request, state, plc, cabinet_store)
     on_task = partial(handle_task_request, taskmanager, state, plc)
@@ -69,7 +73,7 @@ def start():
     taskprocessing = Task_Processing(taskmanager, plc, state, cabinet_store, vis)
 
     rcs.start()
-    vis.connect()
+    threading.Thread(target=vis.connect_with_retry, daemon=True).start()
     taskprocessing.start()
 
 
