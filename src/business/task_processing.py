@@ -423,6 +423,12 @@ class Task_Processing:
             logger.info(f"批次 {batch.batch_no} 无落线货物，跳过")
             return
 
+        if commands:
+            # 每一轮新抓取命令都必须等上一轮六个夹爪彻底结束动作后再写入。
+            # outbound_complete 只代表鞋盒落线完成，不代表夹爪已经完成回柜并空闲。
+            self._wait_all_grippers_idle(batch.batch_no, wait_reason="下发新夹爪命令前")
+
+
         self.plc_service.clear_outbound_complete()
 
         if commands:
@@ -441,6 +447,12 @@ class Task_Processing:
         if return_remaining_boxes:
             self.plc_service.command_return_remaining_boxes()
             logger.info(f"批次 {batch.batch_no} 同步波次落线完成，已触发剩余鞋盒放回收纳柜")
+            # 回柜动作发生在落线完成之后；本批次只有在回柜结束后才算真正执行完成。
+            self._wait_all_grippers_idle(
+                batch_no=batch.batch_no,
+                wait_reason="剩余鞋盒回柜完成前",
+                status_settle_delay=0.6,
+            )
         self._update_cabinet_store_after_batch(batch)
 
         logger.info(f"批次 {batch.batch_no} 执行完成")
@@ -498,6 +510,60 @@ class Task_Processing:
             self._stop_event.wait(timeout=0.2)
 
         raise RuntimeError(f"任务停止，批次 {batch.batch_no} 等待出库完成中断")
+
+
+    # 等待六个夹爪全部空闲后，才能结束回柜动作或下发下一轮新的夹爪命令。
+    def _wait_all_grippers_idle(
+        self,
+        batch_no: int,
+        wait_reason: str,
+        timeout: float = 100.0,
+        status_settle_delay: float = 0.0,
+    ) -> None:
+        # 写入回柜触发寄存器后，状态轮询需要时间观察到 PLC 已开始执行动作。
+        # 默认状态轮询间隔为 0.5 秒，因此回柜场景先等待一次状态刷新窗口。
+        if status_settle_delay > 0:
+            logger.info(
+                f"批次 {batch_no} {wait_reason}: "
+                f"等待 PLC 刷新夹爪运行状态"
+            )
+            if self._stop_event.wait(timeout=status_settle_delay):
+                raise RuntimeError(f"任务停止，批次 {batch_no} 等待夹爪空闲中断")
+
+        deadline = time.time() + timeout
+        last_running_grippers: list[int] | None = None
+
+        while not self._stop_event.is_set():
+            if self.plc_service.is_emergency_stop():
+                raise RuntimeError(f"批次 {batch_no} 等待夹爪空闲时触发急停")
+
+            gripper_states = self.plc_service.get_all_gripper_states()
+            running_grippers = [
+                gripper_id
+                for gripper_id, state in enumerate(gripper_states, start=1)
+                if state.is_running
+            ]
+
+            if not running_grippers:
+                logger.info(f"批次 {batch_no} {wait_reason}: 六个夹爪均已空闲")
+                return
+
+            if running_grippers != last_running_grippers:
+                logger.info(
+                    f"批次 {batch_no} {wait_reason}: "
+                    f"等待运行中的夹爪结束, running_grippers={running_grippers}"
+                )
+                last_running_grippers = running_grippers
+
+            if time.time() > deadline:
+                raise TimeoutError(
+                    f"批次 {batch_no} {wait_reason}等待夹爪空闲超时: "
+                    f"running_grippers={running_grippers}"
+                )
+
+            self._stop_event.wait(timeout=0.2)
+
+        raise RuntimeError(f"任务停止，批次 {batch_no} 等待夹爪空闲中断")
 
     # 更新库位
     def _update_cabinet_store_after_batch(self, batch: OutboundBatch) -> None:

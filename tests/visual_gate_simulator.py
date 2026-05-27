@@ -235,30 +235,30 @@ class SimulatorApp:
         top = ttk.Frame(self.root, padding=5)
         top.pack(fill=tk.X)
 
-        ttk.Label(top, text="Port:").pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Label(top, text="端口:").pack(side=tk.LEFT, padx=(0, 4))
         self.port_var = tk.StringVar(value="23320")
         port_combo = ttk.Combobox(top, textvariable=self.port_var, width=8, state="readonly",
                                   values=["23320", "23321"])
         port_combo.pack(side=tk.LEFT, padx=(0, 12))
 
-        self.start_btn = ttk.Button(top, text="Start", command=self._toggle_server)
+        self.start_btn = ttk.Button(top, text="启动", command=self._toggle_server)
         self.start_btn.pack(side=tk.LEFT, padx=(0, 12))
 
-        self.status_var = tk.StringVar(value="Stopped")
+        self.status_var = tk.StringVar(value="已停止")
         self.status_label = ttk.Label(top, textvariable=self.status_var, foreground="red", font=("", 10, "bold"))
         self.status_label.pack(side=tk.LEFT, padx=(0, 20))
 
         ttk.Separator(top, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
 
         self.auto_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(top, text="Auto Respond", variable=self.auto_var,
+        ttk.Checkbutton(top, text="自动回复", variable=self.auto_var,
                         command=self._update_sim_config).pack(side=tk.LEFT, padx=(0, 8))
 
         self.error_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(top, text="Respond Error", variable=self.error_var,
+        ttk.Checkbutton(top, text="回复错误", variable=self.error_var,
                         command=self._update_sim_config).pack(side=tk.LEFT, padx=(0, 8))
 
-        ttk.Label(top, text="Delay(s):").pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Label(top, text="延迟(秒):").pack(side=tk.LEFT, padx=(0, 4))
         self.delay_var = tk.StringVar(value="0")
         delay_entry = ttk.Entry(top, textvariable=self.delay_var, width=5)
         delay_entry.pack(side=tk.LEFT, padx=(0, 4))
@@ -266,10 +266,10 @@ class SimulatorApp:
 
         ttk.Separator(top, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
 
-        self.manual_btn = ttk.Button(top, text="Manual Send Success", command=self._manual_send_success,
+        self.manual_btn = ttk.Button(top, text="手动回复成功", command=self._manual_send_success,
                                      state=tk.DISABLED)
         self.manual_btn.pack(side=tk.LEFT, padx=(0, 4))
-        self.manual_err_btn = ttk.Button(top, text="Manual Send Error", command=self._manual_send_error,
+        self.manual_err_btn = ttk.Button(top, text="手动回复错误", command=self._manual_send_error,
                                          state=tk.DISABLED)
         self.manual_err_btn.pack(side=tk.LEFT)
 
@@ -277,18 +277,18 @@ class SimulatorApp:
         notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
         goods_frame = ttk.Frame(notebook)
-        notebook.add(goods_frame, text="  Goods List  ")
+        notebook.add(goods_frame, text="  货物列表  ")
         self._build_goods_table(goods_frame)
 
         log_frame = ttk.Frame(notebook)
-        notebook.add(log_frame, text="  Request Log  ")
+        notebook.add(log_frame, text="  请求日志  ")
         self._build_log_panel(log_frame)
 
     def _build_goods_table(self, parent):
         columns = ("seq", "package_id", "good_sku", "box_type", "face_sheet",
                     "logistics", "manual_process_type", "packaging_line")
-        headers = ("#", "Package ID", "SKU", "Box Type", "Face Sheet",
-                   "Logistics", "Manual Process", "Packaging Line")
+        headers = ("序号", "包裹ID", "SKU", "纸箱类型", "面单信息",
+                   "物流类型", "人工处理类型", "打包线")
 
         tree_frame = ttk.Frame(parent)
         tree_frame.pack(fill=tk.BOTH, expand=True)
@@ -314,12 +314,12 @@ class SimulatorApp:
 
         info_frame = ttk.Frame(parent)
         info_frame.pack(fill=tk.X, pady=(4, 0))
-        self.goods_info_var = tk.StringVar(value="Waiting for data...")
+        self.goods_info_var = tk.StringVar(value="等待数据...")
         ttk.Label(info_frame, textvariable=self.goods_info_var, font=("", 9)).pack(side=tk.LEFT)
 
         btn_frame = ttk.Frame(info_frame)
         btn_frame.pack(side=tk.RIGHT)
-        ttk.Button(btn_frame, text="Clear", command=self._clear_goods_table).pack(side=tk.RIGHT)
+        ttk.Button(btn_frame, text="清空", command=self._clear_goods_table).pack(side=tk.RIGHT)
 
     def _build_log_panel(self, parent):
         self.log_text = tk.Text(parent, wrap=tk.WORD, font=("Consolas", 9), state=tk.DISABLED)
@@ -335,13 +335,13 @@ class SimulatorApp:
 
         btn_frame = ttk.Frame(parent)
         btn_frame.pack(side=tk.BOTTOM, fill=tk.X)
-        ttk.Button(btn_frame, text="Clear Log", command=self._clear_log).pack(side=tk.RIGHT)
+        ttk.Button(btn_frame, text="清空日志", command=self._clear_log).pack(side=tk.RIGHT)
 
     def _toggle_server(self):
         if self.sim.running:
             self.sim.stop_server()
-            self.start_btn.config(text="Start")
-            self.status_var.set("Stopped")
+            self.start_btn.config(text="启动")
+            self.status_var.set("已停止")
             self.status_label.config(foreground="red")
             self.manual_btn.config(state=tk.DISABLED)
             self.manual_err_btn.config(state=tk.DISABLED)
@@ -350,12 +350,12 @@ class SimulatorApp:
             self._update_sim_config()
             try:
                 self.sim.start_server()
-                self.start_btn.config(text="Stop")
-                self.status_var.set(f"Listening on :{self.sim.port}")
+                self.start_btn.config(text="停止")
+                self.status_var.set(f"监听中 :{self.sim.port}")
                 self.status_label.config(foreground="#CC8800")
             except OSError as e:
                 self.log_text.config(state=tk.NORMAL)
-                self.log_text.insert(tk.END, f"[ERROR] Failed to start: {e}\n", "res_err")
+                self.log_text.insert(tk.END, f"[错误] 启动失败: {e}\n", "res_err")
                 self.log_text.config(state=tk.DISABLED)
 
     def _update_sim_config(self, *_):
@@ -379,29 +379,29 @@ class SimulatorApp:
 
     def _manual_send_error(self):
         if self.last_request_seq is not None:
-            self.sim.send_manual_response(self.last_request_seq, -1, "Manual error from simulator")
+            self.sim.send_manual_response(self.last_request_seq, -1, "模拟器手动错误")
 
     def _ui_on_connected(self, addr):
         self.root.after(0, self._do_connected, addr)
 
     def _do_connected(self, addr):
-        self.status_var.set(f"Connected: {addr[0]}:{addr[1]}")
+        self.status_var.set(f"已连接: {addr[0]}:{addr[1]}")
         self.status_label.config(foreground="green")
         if not self.auto_var.get():
             self.manual_btn.config(state=tk.NORMAL)
             self.manual_err_btn.config(state=tk.NORMAL)
-        self._append_log(f"--- Client connected: {addr[0]}:{addr[1]} ---\n", "info")
+        self._append_log(f"--- 上位机已连接: {addr[0]}:{addr[1]} ---\n", "info")
 
     def _ui_on_disconnected(self):
         self.root.after(0, self._do_disconnected)
 
     def _do_disconnected(self):
         if self.sim.running:
-            self.status_var.set(f"Listening on :{self.sim.port}")
+            self.status_var.set(f"监听中 :{self.sim.port}")
             self.status_label.config(foreground="#CC8800")
         self.manual_btn.config(state=tk.DISABLED)
         self.manual_err_btn.config(state=tk.DISABLED)
-        self._append_log("--- Client disconnected ---\n", "info")
+        self._append_log("--- 上位机已断开 ---\n", "info")
 
     def _ui_on_request(self, seq, body):
         self.root.after(0, self._do_request, seq, body)
@@ -415,15 +415,15 @@ class SimulatorApp:
         goods = body.get("goods", [])
 
         self._append_log(
-            f"\n[REQ #{self.sim.request_count}] seq={seq}, msg_type=1000, "
-            f"timestamp={timestamp}, good_count={good_count}\n", "req"
+            f"\n[请求 #{self.sim.request_count}] seq={seq}, msg_type=1000, "
+            f"时间戳={timestamp}, 货物数={good_count}\n", "req"
         )
         for g in goods:
-            line = (f"  #{g.get('sequence', '?')} | pkg={g.get('package_id', '')} | "
-                    f"sku={g.get('good_sku', '')} | box={g.get('box_type', '')} | "
-                    f"face={g.get('face_sheet', '')} | log={g.get('logistics', '')} | "
-                    f"manual={g.get('manual_process_type', '')} | "
-                    f"line={g.get('packaging_line', '')}\n")
+            line = (f"  #{g.get('sequence', '?')} | 包裹={g.get('package_id', '')} | "
+                    f"SKU={g.get('good_sku', '')} | 纸箱={g.get('box_type', '')} | "
+                    f"面单={g.get('face_sheet', '')} | 物流={g.get('logistics', '')} | "
+                    f"处理={g.get('manual_process_type', '')} | "
+                    f"打包线={g.get('packaging_line', '')}\n")
             self._append_log(line, "req")
 
         for item in goods:
@@ -441,13 +441,13 @@ class SimulatorApp:
 
         total = len(self.goods_tree.get_children())
         self.goods_info_var.set(
-            f"Last request: seq={seq}, good_count={good_count} | Total records in table: {total}"
+            f"最近请求: seq={seq}, 货物数={good_count} | 表格总记录: {total}"
         )
 
         self.goods_tree.yview_moveto(1.0)
 
         if not self.auto_var.get():
-            self._append_log(f"  >> Waiting for manual response... (seq={seq})\n", "info")
+            self._append_log(f"  >> 等待手动回复... (seq={seq})\n", "info")
 
     def _ui_on_response(self, seq, body):
         self.root.after(0, self._do_response, seq, body)
@@ -457,9 +457,9 @@ class SimulatorApp:
         err_msg = body.get("err_msg", "")
         tag = "res_ok" if ret_code == 0 else "res_err"
         self._append_log(
-            f"[RES] seq={seq}, ret_code={ret_code}"
-            + (f", err_msg={err_msg}" if err_msg else "")
-            + f", create_time={body.get('create_time', '')}\n", tag
+            f"[响应] seq={seq}, ret_code={ret_code}"
+            + (f", 错误信息={err_msg}" if err_msg else "")
+            + f", 时间={body.get('create_time', '')}\n", tag
         )
 
     def _append_log(self, text, tag=None):
@@ -479,7 +479,7 @@ class SimulatorApp:
     def _clear_goods_table(self):
         for item in self.goods_tree.get_children():
             self.goods_tree.delete(item)
-        self.goods_info_var.set("Table cleared. Waiting for data...")
+        self.goods_info_var.set("表格已清空，等待数据...")
 
     def on_close(self):
         self.sim.stop_server()
