@@ -109,7 +109,6 @@ def handle_status_request(state_machine: StateMachine, plc_service: PLC_Service,
                 business_data["container"] = cabinet_store.to_rcs_container()
             except Exception as e:
                 logger.error(f"批量查询 container 失败: {e}")
-                business_data["container_error"] = str(e)
             for name, method in [
                 ("task_detail", state_machine.get_task_execution_detail),
                 ("status", state_machine.get_outbound_station_status),
@@ -118,7 +117,6 @@ def handle_status_request(state_machine: StateMachine, plc_service: PLC_Service,
                     business_data.update(method())
                 except Exception as e:
                     logger.error(f"批量查询 {name} 失败: {e}")
-                    business_data[f"{name}_error"] = str(e)
             try:
                 business_data.update(plc_service.get_to_rcs())
             except Exception as e:
