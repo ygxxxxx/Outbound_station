@@ -330,6 +330,37 @@ class PLC_Service:
         result = self._plc_client.read_holding_registers(OutboundAddr.PHOTO_COUNT, 1)
         return result[0]
 
+    # 控制单个夹爪把同列前排库位货物移动到其他层的同列前排库位
+    def command_location_move(self, gripper_id: int, pick_layer: int, place_layer: int) -> bool:
+        GripperAddr._validate_gripper_id(gripper_id)
+        if not 1 <= pick_layer <= 4:
+            raise ParameterError(message="移动抓取层号超出范围", expected_value="1~4", actual_value=str(pick_layer))
+        if not 1 <= place_layer <= 4:
+            raise ParameterError(message="移动放置层号超出范围", expected_value="1~4", actual_value=str(place_layer))
+
+        pick_addr = LocationMoveAddr.move_pick_addr(gripper_id)
+        place_addr = LocationMoveAddr.move_place_addr(gripper_id)
+
+        self._plc_client.write_holding_registers(pick_addr, [pick_layer])
+        self._plc_client.write_holding_registers(place_addr, [place_layer])
+
+        logger.info(
+            f"夹爪{gripper_id}库位移动寄存器写入: "
+            f"D{pick_addr}(pick_layer)={pick_layer}, "
+            f"D{place_addr}(place_layer)={place_layer}"
+        )
+        return True
+
+    # 批量库位移动。移动接口是夹爪解绑动作，调用方负责确认对应夹爪空闲。
+    def command_location_move_batch(self, moves: list[dict]) -> bool:
+        for move in moves:
+            self.command_location_move(
+                gripper_id=move["gripper_id"],
+                pick_layer=move["pick_layer"],
+                place_layer=move["place_layer"],
+            )
+        return True
+
 
 if __name__ == "__main__":
     plc = PLC_Client(host = '192.168.1.88', port = 502, slave_id= 1, timeout= 5)
@@ -358,32 +389,3 @@ if __name__ == "__main__":
         plc_service.close()
         logger.info("程序已停止")
 
-# 控制单个夹爪夹取货物移动到其他库位
-def command_location_move(self, gripper_id: int, pick_layer: int, place_layer: int) -> bool:
-    if not 1 <= pick_layer <= 4:
-        raise ParameterError(message="移动抓取层号超出范围", expected_value="1~4", actual_value=str(pick_layer))
-    if not 1 <= place_layer <= 4:
-        raise ParameterError(message="移动放置层号超出范围", expected_value="1~4", actual_value=str(place_layer))
-
-    pick_addr = LocationMoveAddr.move_pick_addr(gripper_id)
-    place_addr = LocationMoveAddr.move_place_addr(gripper_id)
-
-    self._plc_client.write_holding_registers(pick_addr, [pick_layer])
-    self._plc_client.write_holding_registers(place_addr, [place_layer])
-
-    logger.info(
-        f"夹爪{gripper_id}库位移动寄存器写入: "
-        f"D{pick_addr}(pick_layer)={pick_layer}, "
-        f"D{place_addr}(place_layer)={place_layer}"
-    )
-    return True
-
-# 批量库位移动
-def command_location_move_batch(self, moves: list[dict]) -> bool:
-    for move in moves:
-        self.command_location_move(
-            gripper_id=move["gripper_id"],
-            pick_layer=move["pick_layer"],
-            place_layer=move["place_layer"],
-        )
-    return True
