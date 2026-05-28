@@ -58,7 +58,7 @@ def start():
     on_task = partial(handle_task_request, taskmanager, state, plc)
 
     rcs = RCS_Sever(
-        status_host = "127.0.0.1",
+        status_host = "0.0.0.0",
         status_port = 23310,
         task_host = "0.0.0.0",
         task_port = 23311,
@@ -66,7 +66,7 @@ def start():
         on_task_request=on_task,)
     
     vis = VisionGateClient(
-        host = "127.0.0.1",
+        host = "192.168.2.100",
         port = 23320,
     )
 
