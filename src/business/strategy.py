@@ -97,6 +97,7 @@ class PackagePlanInfo:
     station_codes: list[str]    # 涉及的工作站
     is_cross_station: bool      # 是否跨越工作站
     is_multi_slot: bool         # 是否涉及多个库位
+    batch_group_id: int          # Planning barrier after simulated refill/location move; one batch cannot cross it
     clears_front_blocker: bool   # 是否正在清理会阻挡后排补位的前排库位
     before_backwards: list[CabinetBackwardAction] = field(default_factory=list) # 这个计划段执行前需要先做的库位后退
     before_moves: list[LocationMoveAction] = field(default_factory=list)        # 这个计划段执行前需要先做的库位移动
@@ -154,6 +155,7 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
     same_line_batch_count = 0
     single_wave_line: str | None = None
     single_wave_grippers: set[int] = set()
+    batch_group_id = 0
     
     while pending_packages:
         candidate_infos: list[PackagePlanInfo] = []
@@ -178,6 +180,7 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
                     package = plan_package,
                     slot_picks = slot_picks,
                     simulated_inventory = simulated_inventory,
+                    batch_group_id = batch_group_id,
                 )
             )
 
@@ -228,6 +231,7 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
                 package = selected_plan_package,
                 slot_picks = selected_slot_picks,
                 simulated_inventory = simulated_inventory,
+                batch_group_id = batch_group_id,
                 before_backwards = pending_before_backwards,
                 before_moves = pending_before_moves,
             )
@@ -265,12 +269,17 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
 
         # 当前没有任何包裹能直接出库时，尝试把已经清空前排的后排货物补位到 1、2 位。
         if shift_back_goods_to_front(simulated_inventory):
+            # Refill changes the real slot state, so later single packages must not be merged into earlier batches.
+            batch_group_id += 1
+            single_wave_line = None
+            single_wave_grippers = set()
             continue
 
         same_package_info = try_build_same_package_front_blocker_info(
             pending_packages = pending_packages,
             remaining_goods_by_package = remaining_goods_by_package,
             simulated_inventory = simulated_inventory,
+            batch_group_id = batch_group_id,
         )
         if same_package_info is not None:
             package_infos.append(same_package_info)
@@ -297,6 +306,8 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
             before_backwards, before_moves = resolved
             pending_before_backwards.extend(before_backwards)
             pending_before_moves.extend(before_moves)
+            # Location adjustment changes real pick positions; later plans must start a new execution group.
+            batch_group_id += 1
             single_wave_line = None
             single_wave_grippers = set()
             continue
@@ -376,6 +387,7 @@ def build_package_info(
     package: Package,
     slot_picks: list[SlotPick],
     simulated_inventory: dict[str, list[str]] | None = None,
+    batch_group_id: int = 0,
     before_backwards: list[CabinetBackwardAction] | None = None,
     before_moves: list[LocationMoveAction] | None = None,
 ) -> PackagePlanInfo:
@@ -392,6 +404,7 @@ def build_package_info(
         is_cross_station = len(station_codes) > 1,
         is_multi_slot = len(slot_picks) > 1,
         clears_front_blocker = package_clears_front_blocker(slot_picks, simulated_inventory),
+        batch_group_id = batch_group_id,
         before_backwards = list(before_backwards or []),
         before_moves = list(before_moves or []),
     )
@@ -475,6 +488,7 @@ def try_build_same_package_front_blocker_info(
     pending_packages: list[Package],
     remaining_goods_by_package: dict[str, list[str]],
     simulated_inventory: dict[str, list[str]],
+    batch_group_id: int,
 ) -> PackagePlanInfo | None:
     for package in pending_packages:
         remaining_goods = remaining_goods_by_package.get(package.package_id, [])
@@ -518,6 +532,7 @@ def try_build_same_package_front_blocker_info(
                     package = plan_package,
                     slot_picks = [slot_pick],
                     simulated_inventory = simulated_inventory,
+                    batch_group_id = batch_group_id,
                 )
 
     return None
@@ -869,13 +884,18 @@ def build_batches(sorted_infos: list[PackagePlanInfo]) -> list[OutboundBatch]:
 
         if is_single_package_info(info):
             batch_line = info.target_line
+            batch_group_id = info.batch_group_id
             same_line_infos: list[PackagePlanInfo] = []
 
             # 单件包裹不需要独占批次。
             # 这里先把同一条流水线的连续单件包裹收集起来，后面再按 6 个全局夹爪分批。
             while index < len(sorted_infos):
                 candidate = sorted_infos[index]
-                if not is_single_package_info(candidate) or candidate.target_line != batch_line:
+                if (
+                    not is_single_package_info(candidate)
+                    or candidate.target_line != batch_line
+                    or candidate.batch_group_id != batch_group_id
+                ):
                     break
 
                 same_line_infos.append(candidate)
