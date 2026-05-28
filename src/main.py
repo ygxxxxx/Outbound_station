@@ -2,12 +2,12 @@ from src.communication.rcs_sever import RCS_Sever
 from src.communication.plc_client import PLC_Client
 from src.communication.plc_service import PLC_Service
 from src.communication.vision_gate import VisionGateClient
-from src.business.request_handle import parse_outbound_task, handle_status_request, handle_task_request
+from src.business.request_handle import handle_status_request, handle_task_request
 from src.business.state_machine import StateMachine
 from src.business.task_manager import TaskManager
 from src.business.task_processing import Task_Processing
 from src.models.containers import CabinetStore
-from src.config.settings import config
+from src.config.settings import load_config
 from src.utils.logger import logger
 
 from functools import partial
@@ -30,15 +30,17 @@ cabinet_store: CabinetStore = None
 
 def start():
     global rcs, plc, plc_client, state, taskmanager, taskprocessing, cabinet_store, vis
+
+    config = load_config()
     
     taskmanager = TaskManager()
     cabinet_store = CabinetStore.create(station_prefixes=["A", "B", "C"])
 
     plc_client = PLC_Client(
-        host = "192.168.1.88",
-        port = 502,
+        host = config.plcconfig.plc_address,
+        port = config.plcconfig.plc_port,
         slave_id = 1,
-        timeout = 5
+        timeout = config.plcconfig.timeout
     )
     plc = PLC_Service(plc_client)
     state = StateMachine(
@@ -58,16 +60,16 @@ def start():
     on_task = partial(handle_task_request, taskmanager, state, plc)
 
     rcs = RCS_Sever(
-        status_host = "0.0.0.0",
-        status_port = 23310,
-        task_host = "0.0.0.0",
-        task_port = 23311,
+        status_host = config.rcsconfig.rcs_address,
+        status_port = config.rcsconfig.rcs_status_port,
+        task_host = config.rcsconfig.rcs_address,
+        task_port = config.rcsconfig.rcs_task_port,
         on_status_request=on_status,
         on_task_request=on_task,)
     
     vis = VisionGateClient(
-        host = "192.168.2.100",
-        port = 23320,
+        host = config.visiongateconfig.vg_address,
+        port = config.visiongateconfig.vg_port,
     )
 
     taskprocessing = Task_Processing(taskmanager, plc, state, cabinet_store, vis)
