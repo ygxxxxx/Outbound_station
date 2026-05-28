@@ -1,19 +1,21 @@
 # PLC 通信设置
 PLC:
-    plc_address: ""           # PLC 地址
-    plc_port:                    # PLC 端口号
+    plc_address: "192.168.1.88"           # PLC 地址
+    plc_port: 502               # PLC 端口号
     timeout: 5000            # 通信超时时间 (ms) 
     read_cycle: 10           # PLC 读取周期（ms）
 
 # RCS 接口设置
 RCS:
-    rcs_address: ""      # RCS 接口地址
-    rcs_port:                   # RCS 端口号
+    rcs_address: "0.0.0.0"      # RCS 接口地址
+    rcs_status_port: 23310                   # RCS 状态端口号
+    rcs_task_port: 23311                     # RCS 任务端口号
 
 # 视觉门配置
 visiongate:
-    vg_address: ""
-    vg_port:
+    vg_address: "127.0.0.1"
+    vg_port: 23320
+
 
 # 异常处理配置
 exception:
