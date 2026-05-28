@@ -8,6 +8,9 @@ import time
 import random
 import threading
 import copy
+import json
+from collections import Counter
+from pathlib import Path
 
 logger = logger.bind(tag='rcs_client_simulator')
 
@@ -19,6 +22,7 @@ LOGISTICS_OPTIONS = ("shunfeng", "yunda", "zhongtong", "yuantong", "jd", "ems")
 MANUAL_PROCESS_OPTIONS = ("N", "G", "S")
 PACKAGING_LINE_OPTIONS = ("HS1", "HS2", "MP1", "MA1", "MO1")
 BOX_TYPE_OPTIONS = ("DW01-A", "DW01-B", "DW02-A", "DW02-B")
+GENERATED_OUTBOUND_FILE = Path(__file__).with_name("generated_outbound_tasks.json")
 
 
 # ── RCS Simulator Backend ──────────────────────────────────────────
@@ -119,7 +123,7 @@ class SimulatorApp:
         frame.pack(fill=tk.X, padx=10, pady=(8, 4))
 
         ttk.Label(frame, text="主机:").pack(side=tk.LEFT, padx=(0, 4))
-        self.host_var = tk.StringVar(value="127.0.0.1")
+        self.host_var = tk.StringVar(value="192.168.2.202")
         ttk.Entry(frame, textvariable=self.host_var, width=14).pack(side=tk.LEFT, padx=(0, 14))
 
         ttk.Label(frame, text="状态端口:").pack(side=tk.LEFT, padx=(0, 4))
@@ -249,12 +253,13 @@ class SimulatorApp:
         ttk.Spinbox(qf, from_=1, to=4, textvariable=self.put_qty, width=4).grid(row=0, column=3, padx=4)
 
         ttk.Button(qf, text="填满全部库位(16格)", command=self._put_fill_all).grid(row=0, column=4, padx=8)
+        ttk.Button(qf, text="随机生成约20件", command=self._put_generate_random).grid(row=0, column=5, padx=8)
 
-        ttk.Label(qf, text="指定层:").grid(row=0, column=5, padx=4)
+        ttk.Label(qf, text="指定层:").grid(row=0, column=6, padx=4)
         self.put_layer = tk.IntVar(value=1)
-        ttk.Spinbox(qf, from_=1, to=4, textvariable=self.put_layer, width=4).grid(row=0, column=6, padx=4)
+        ttk.Spinbox(qf, from_=1, to=4, textvariable=self.put_layer, width=4).grid(row=0, column=7, padx=4)
 
-        ttk.Button(qf, text="填满指定层(4格)", command=self._put_fill_layer).grid(row=0, column=7, padx=8)
+        ttk.Button(qf, text="填满指定层(4格)", command=self._put_fill_layer).grid(row=0, column=8, padx=8)
 
         ma = ttk.LabelFrame(tab, text="添加单个库位", padding=6)
         ma.pack(fill=tk.X, pady=4)
@@ -384,6 +389,7 @@ class SimulatorApp:
         ttk.Button(btn_row, text="删除选中", command=self._out_del_selected).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_row, text="清空列表", command=self._out_clear).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_row, text="重复上次出库任务", command=self._out_repeat_last).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_row, text="随机生成包裹", command=self._out_generate_random_from_storage).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_row, text="下发出库任务", command=self._out_send).pack(side=tk.RIGHT, padx=4)
 
     # ────────────── Response Panel ──────────────
@@ -552,6 +558,63 @@ class SimulatorApp:
                 self.put_tree.insert('', tk.END, values=(loc, ",".join(skus), qty))
 
         self._log(f"已填满 {station} 全部16个库位: SKU={sku}, 每格{qty}件")
+
+    def _put_generate_random(self):
+        items = self.put_tree.get_children()
+        if items and not messagebox.askyesno("确认", "随机生成会覆盖已有库位数据，继续？"):
+            return
+
+        station = self.put_station.get()
+        selected_locations = []
+        for layer in range(1, 5):
+            positions = list(range(1, 5))
+            random.shuffle(positions)
+            for pos in positions[:2]:
+                selected_locations.append(f"{station}{layer}{pos}")
+
+        self.put_tree.delete(*items)
+        target_total = random.randint(18, 22)
+        slot_counts = self._random_putaway_slot_counts(
+            slot_count=len(selected_locations),
+            target_total=target_total,
+        )
+        sku_types = [f"SKU{index}" for index in range(1, random.randint(4, 5) + 1)]
+
+        for loc, slot_qty in zip(selected_locations, slot_counts):
+            sku = random.choice(sku_types)
+            skus = [sku] * slot_qty
+            self.put_tree.insert('', tk.END, values=(loc, ",".join(skus), slot_qty))
+
+        total_count = sum(
+            int(self.put_tree.item(item, "values")[2])
+            for item in self.put_tree.get_children()
+        )
+        self._log(
+            f"已随机生成放货任务: 工作站={station}, "
+            f"库位数={len(selected_locations)}, 货物数={total_count}，"
+            f"SKU种类={len(sku_types)}，每层2个库位有货，每个库位内 SKU 均相同"
+        )
+
+    def _random_putaway_slot_counts(self, slot_count: int, target_total: int) -> list[int]:
+        counts = [1] * slot_count
+        remaining = target_total - slot_count
+
+        while remaining > 0:
+            available_indexes = [
+                index
+                for index, count in enumerate(counts)
+                if count < 4
+            ]
+            if not available_indexes:
+                break
+
+            index = random.choice(available_indexes)
+            add_count = random.randint(1, min(4 - counts[index], remaining))
+            counts[index] += add_count
+            remaining -= add_count
+
+        random.shuffle(counts)
+        return counts
 
     def _put_fill_layer(self):
         station = self.put_station.get()
@@ -743,6 +806,228 @@ class SimulatorApp:
 
         self._run_in_thread(do)
         self._log(f"重复上次出库任务: {len(task_data['packages'])}个包裹")
+
+    def _out_generate_random_from_storage(self):
+        if not self._require_connection():
+            return
+
+        if self.out_tree.get_children():
+            if not messagebox.askyesno("确认", "随机生成会覆盖当前出库包裹列表，继续？"):
+                return
+
+        def do():
+            storage_resp = self.simulator.query_outbound_storage()
+            if storage_resp.get("ret_code", 0) != 0:
+                err_msg = storage_resp.get("err_msg", "查询库位信息失败")
+                self.root.after(0, lambda err_msg=err_msg: messagebox.showerror("生成失败", err_msg))
+                return
+
+            try:
+                container = storage_resp.get("container", [])
+                packages = self._build_random_packages_from_container(container)
+                task_data = {
+                    "task_id": f"OUT_{int(time.time())}",
+                    "task_types": "outbound",
+                    "timestamp": str(int(time.time() * 1000)),
+                    "package_count": len(packages),
+                    "packages": packages,
+                }
+                saved_path = self._save_generated_outbound_case(container, task_data)
+            except Exception as exc:
+                self.root.after(0, lambda exc=exc: messagebox.showerror("生成失败", str(exc)))
+                return
+
+            self.root.after(
+                0,
+                lambda: self._apply_generated_outbound_task(task_data, saved_path),
+            )
+
+        self._run_in_thread(do)
+
+    def _build_random_packages_from_container(self, container: list[dict]) -> list[dict]:
+        storage_snapshot = self._normalize_container_goods(container)
+        goods_pool = [
+            sku
+            for slot in storage_snapshot
+            for sku in slot["goods"]
+        ]
+        if len(goods_pool) < 3:
+            raise ValueError("当前库位货物少于3件，无法同时生成单盒包裹和多盒包裹")
+
+        random.shuffle(goods_pool)
+        target_total = self._random_target_goods_count(len(goods_pool))
+        selected_goods = goods_pool[:target_total]
+
+        packages: list[dict] = []
+        package_index = 1
+
+        # 先强制生成一个多盒包裹和一个单盒包裹，保证能覆盖两种出库策略。
+        multi_size = random.randint(2, min(4, len(selected_goods) - 1))
+        multi_goods = [selected_goods.pop() for _ in range(multi_size)]
+        packages.append(self._build_generated_package(package_index, multi_goods))
+        package_index += 1
+
+        single_goods = [selected_goods.pop()]
+        packages.append(self._build_generated_package(package_index, single_goods))
+        package_index += 1
+
+        while selected_goods:
+            remaining = len(selected_goods)
+            if remaining >= 2 and random.random() < 0.35:
+                size = random.randint(2, min(4, remaining))
+            else:
+                size = 1
+
+            goods = [selected_goods.pop() for _ in range(size)]
+            packages.append(self._build_generated_package(package_index, goods))
+            package_index += 1
+
+        random.shuffle(packages)
+        self._assert_generated_packages_match_inventory(packages, storage_snapshot)
+        return packages
+
+    def _normalize_container_goods(self, container: list[dict]) -> list[dict]:
+        normalized: list[dict] = []
+        for item in container:
+            location = item.get("storage_bin") or item.get("storage_location") or item.get("location_code")
+            if not location:
+                continue
+
+            raw_goods = item.get("goods", [])
+            if isinstance(raw_goods, str):
+                goods = [sku.strip() for sku in raw_goods.split(",") if sku.strip()]
+            elif isinstance(raw_goods, list):
+                goods = [str(sku).strip() for sku in raw_goods if str(sku).strip()]
+            else:
+                goods = []
+
+            qty = int(item.get("qty", len(goods)) or 0)
+            if goods and qty != len(goods):
+                qty = len(goods)
+
+            normalized.append({
+                "storage_bin": location,
+                "qty": qty,
+                "goods": goods,
+            })
+        return normalized
+
+    def _random_target_goods_count(self, total_goods: int) -> int:
+        if total_goods <= 12:
+            return total_goods
+        lower = max(8, total_goods // 3)
+        upper = min(total_goods, 40)
+        return random.randint(lower, upper)
+
+    def _build_generated_package(self, package_index: int, goods: list[str]) -> dict:
+        count = len(goods)
+        packaging_line = "MP1" if count > 1 else random.choice(("HS1", "HS2"))
+        package_id = f"PKG_AUTO_{int(time.time())}_{package_index:03d}"
+        return {
+            "package_id": package_id,
+            "box_type": random.choice(BOX_TYPE_OPTIONS),
+            "face_sheet": f"FS_AUTO_{package_index:03d}",
+            "logistics": random.choice(LOGISTICS_OPTIONS),
+            "manual_process_type": "N",
+            "packaging_line": packaging_line,
+            "count": count,
+            "goods": list(goods),
+        }
+
+    def _assert_generated_packages_match_inventory(
+        self,
+        packages: list[dict],
+        storage_snapshot: list[dict],
+    ) -> None:
+        inventory_counter = Counter(
+            sku
+            for slot in storage_snapshot
+            for sku in slot["goods"]
+        )
+        package_counter = Counter(
+            sku
+            for package in packages
+            for sku in package["goods"]
+        )
+        overused = {
+            sku: {
+                "inventory": inventory_counter.get(sku, 0),
+                "planned": planned_count,
+            }
+            for sku, planned_count in package_counter.items()
+            if planned_count > inventory_counter.get(sku, 0)
+        }
+        if overused:
+            raise ValueError(f"随机包裹生成数量超过当前库存: {overused}")
+
+        if not any(len(package["goods"]) == 1 for package in packages):
+            raise ValueError("随机包裹生成失败：没有单盒包裹")
+        if not any(len(package["goods"]) > 1 for package in packages):
+            raise ValueError("随机包裹生成失败：没有多盒包裹")
+
+        for package in packages:
+            if len(package["goods"]) > 1 and package["packaging_line"] != "MP1":
+                raise ValueError(f"多盒包裹必须走 MP1: {package['package_id']}")
+            if len(package["goods"]) == 1 and package["packaging_line"] not in ("HS1", "HS2"):
+                raise ValueError(f"单盒包裹必须走 HS1/HS2: {package['package_id']}")
+            if package["count"] != len(package["goods"]):
+                raise ValueError(f"包裹 count 与 goods 数量不一致: {package['package_id']}")
+
+    def _save_generated_outbound_case(self, container: list[dict], task_data: dict) -> Path:
+        storage_snapshot = self._normalize_container_goods(container)
+        record = {
+            "created_at": int(time.time() * 1000),
+            "storage": storage_snapshot,
+            "storage_summary": {
+                "slot_count": len(storage_snapshot),
+                "non_empty_slot_count": sum(1 for slot in storage_snapshot if slot["goods"]),
+                "total_goods": sum(len(slot["goods"]) for slot in storage_snapshot),
+                "sku_counts": dict(Counter(
+                    sku
+                    for slot in storage_snapshot
+                    for sku in slot["goods"]
+                )),
+            },
+            "outbound_task": task_data,
+        }
+
+        if GENERATED_OUTBOUND_FILE.exists():
+            with GENERATED_OUTBOUND_FILE.open("r", encoding="utf-8") as file:
+                data = json.load(file)
+            if not isinstance(data, list):
+                data = [data]
+        else:
+            data = []
+
+        data.append(record)
+        with GENERATED_OUTBOUND_FILE.open("w", encoding="utf-8") as file:
+            json.dump(data, file, ensure_ascii=False, indent=2)
+
+        return GENERATED_OUTBOUND_FILE
+
+    def _apply_generated_outbound_task(self, task_data: dict, saved_path: Path) -> None:
+        self.out_tree.delete(*self.out_tree.get_children())
+        self.out_tid.set(task_data["task_id"])
+
+        for package in task_data["packages"]:
+            self.out_tree.insert('', tk.END, values=(
+                package["package_id"],
+                package["box_type"],
+                package["face_sheet"],
+                package["logistics"],
+                package["manual_process_type"],
+                package["packaging_line"],
+                ",".join(package["goods"]),
+            ))
+
+        self._last_out_task = copy.deepcopy(task_data)
+        size_counts = Counter(len(package["goods"]) for package in task_data["packages"])
+        self._log(
+            f"已根据当前库位随机生成 {len(task_data['packages'])} 个包裹，"
+            f"货物数={sum(package['count'] for package in task_data['packages'])}，"
+            f"单盒={size_counts.get(1, 0)}，多盒={sum(count for size, count in size_counts.items() if size > 1)}，"
+            f"已保存: {saved_path}"
+        )
 
     # ────────────── Close ──────────────
 

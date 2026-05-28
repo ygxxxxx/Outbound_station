@@ -1,0 +1,460 @@
+[
+  {
+    "created_at": 1779953980826,
+    "storage": [
+      {
+        "storage_bin": "A11",
+        "qty": 2,
+        "goods": [
+          "SKU1",
+          "SKU1"
+        ]
+      },
+      {
+        "storage_bin": "A12",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A13",
+        "qty": 4,
+        "goods": [
+          "SKU4",
+          "SKU4",
+          "SKU4",
+          "SKU4"
+        ]
+      },
+      {
+        "storage_bin": "A14",
+        "qty": 3,
+        "goods": [
+          "SKU3",
+          "SKU3",
+          "SKU3"
+        ]
+      },
+      {
+        "storage_bin": "A21",
+        "qty": 3,
+        "goods": [
+          "SKU1",
+          "SKU1",
+          "SKU1"
+        ]
+      },
+      {
+        "storage_bin": "A22",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A23",
+        "qty": 4,
+        "goods": [
+          "SKU2",
+          "SKU2",
+          "SKU2",
+          "SKU2"
+        ]
+      },
+      {
+        "storage_bin": "A24",
+        "qty": 1,
+        "goods": [
+          "SKU4"
+        ]
+      },
+      {
+        "storage_bin": "A31",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A32",
+        "qty": 1,
+        "goods": [
+          "SKU2"
+        ]
+      },
+      {
+        "storage_bin": "A33",
+        "qty": 4,
+        "goods": [
+          "SKU1",
+          "SKU1",
+          "SKU1",
+          "SKU1"
+        ]
+      },
+      {
+        "storage_bin": "A34",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A41",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A42",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A43",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A44",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B11",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B12",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B13",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B14",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B21",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B22",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B23",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B24",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B31",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B32",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B33",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B34",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B41",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B42",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B43",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "B44",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C11",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C12",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C13",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C14",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C21",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C22",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C23",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C24",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C31",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C32",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C33",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C34",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C41",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C42",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C43",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "C44",
+        "qty": 0,
+        "goods": []
+      }
+    ],
+    "storage_summary": {
+      "slot_count": 48,
+      "non_empty_slot_count": 8,
+      "total_goods": 22,
+      "sku_counts": {
+        "SKU1": 9,
+        "SKU4": 5,
+        "SKU3": 3,
+        "SKU2": 5
+      }
+    },
+    "outbound_task": {
+      "task_id": "OUT_1779953980",
+      "task_types": "outbound",
+      "timestamp": "1779953980825",
+      "package_count": 13,
+      "packages": [
+        {
+          "package_id": "PKG_AUTO_1779953980_006",
+          "box_type": "DW02-B",
+          "face_sheet": "FS_AUTO_006",
+          "logistics": "yuantong",
+          "manual_process_type": "N",
+          "packaging_line": "HS2",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1779953980_004",
+          "box_type": "DW01-A",
+          "face_sheet": "FS_AUTO_004",
+          "logistics": "yuantong",
+          "manual_process_type": "N",
+          "packaging_line": "MP1",
+          "count": 4,
+          "goods": [
+            "SKU4",
+            "SKU1",
+            "SKU1",
+            "SKU4"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1779953980_010",
+          "box_type": "DW02-B",
+          "face_sheet": "FS_AUTO_010",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1779953980_011",
+          "box_type": "DW02-B",
+          "face_sheet": "FS_AUTO_011",
+          "logistics": "jd",
+          "manual_process_type": "N",
+          "packaging_line": "HS2",
+          "count": 1,
+          "goods": [
+            "SKU3"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1779953980_003",
+          "box_type": "DW02-B",
+          "face_sheet": "FS_AUTO_003",
+          "logistics": "zhongtong",
+          "manual_process_type": "N",
+          "packaging_line": "HS2",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1779953980_009",
+          "box_type": "DW01-B",
+          "face_sheet": "FS_AUTO_009",
+          "logistics": "jd",
+          "manual_process_type": "N",
+          "packaging_line": "HS2",
+          "count": 1,
+          "goods": [
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1779953980_005",
+          "box_type": "DW01-B",
+          "face_sheet": "FS_AUTO_005",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1779953980_007",
+          "box_type": "DW02-B",
+          "face_sheet": "FS_AUTO_007",
+          "logistics": "jd",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1779953980_012",
+          "box_type": "DW01-A",
+          "face_sheet": "FS_AUTO_012",
+          "logistics": "zhongtong",
+          "manual_process_type": "N",
+          "packaging_line": "HS2",
+          "count": 1,
+          "goods": [
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1779953980_002",
+          "box_type": "DW01-B",
+          "face_sheet": "FS_AUTO_002",
+          "logistics": "ems",
+          "manual_process_type": "N",
+          "packaging_line": "HS2",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1779953980_001",
+          "box_type": "DW01-B",
+          "face_sheet": "FS_AUTO_001",
+          "logistics": "ems",
+          "manual_process_type": "N",
+          "packaging_line": "MP1",
+          "count": 3,
+          "goods": [
+            "SKU3",
+            "SKU3",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1779953980_013",
+          "box_type": "DW01-A",
+          "face_sheet": "FS_AUTO_013",
+          "logistics": "zhongtong",
+          "manual_process_type": "N",
+          "packaging_line": "HS2",
+          "count": 1,
+          "goods": [
+            "SKU4"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1779953980_008",
+          "box_type": "DW02-A",
+          "face_sheet": "FS_AUTO_008",
+          "logistics": "ems",
+          "manual_process_type": "N",
+          "packaging_line": "MP1",
+          "count": 4,
+          "goods": [
+            "SKU4",
+            "SKU2",
+            "SKU1",
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  }
+]
