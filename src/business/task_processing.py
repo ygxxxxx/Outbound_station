@@ -192,6 +192,7 @@ class Task_Processing:
                 logger.warning(f"工作站{station_code} 所有层均无货物，直接标记放货完成")
                 self._transition_or_raise(station_code, StationState.DELIVERED, "无货物直接完成")
                 self.taskmanager.complete_task(queuetask.task_id)
+                time.sleep(2)
                 self.state_machine.transition(station_code, StationState.IDLE, reason="放货任务已释放")
                 return
 
@@ -247,6 +248,7 @@ class Task_Processing:
 
             self._transition_or_raise(station_code, StationState.DELIVERED, "放货完成")
             self.taskmanager.complete_task(queuetask.task_id)
+            time.sleep(2)
             self.state_machine.transition(station_code, StationState.IDLE, reason="放货任务已释放")
         except Exception as exc:
             logger.error(f"放货任务执行失败: task_id={queuetask.task_id}, error={exc}")
@@ -269,6 +271,9 @@ class Task_Processing:
             for station_code in ("A", "B", "C"):
                 self._transition_or_raise(station_code, StationState.DONE, "任务完成")
             self.taskmanager.complete_task(queuetask.task_id)
+            time.sleep(2)
+            for station_code in ("A", "B", "C"):
+                self.state_machine.transition(station_code, StationState.IDLE, reason="出库任务已释放")
         except Exception as exc:
             logger.error(f"出库任务执行失败: task_id={queuetask.task_id}, error={exc}")
             self._fail_running_task(queuetask, ["A", "B", "C"], exc)
@@ -730,6 +735,8 @@ class Task_Processing:
                     f"批次 {batch.batch_no} 已更新库位: "
                     f"location={action.location_code}, removed={placed_skus}"
                 )
+
+    # 发送出库货物信息到视觉门
     def _send_batch_to_vision_gate(self, batch: OutboundBatch, package_lookup: dict) -> None:
         if self.vision_gate is None:
             return
@@ -777,7 +784,6 @@ class Task_Processing:
         logger.info(f"批次 {batch.batch_no} 视觉门确认接收成功")
 
     # 统计批次落线数量
-
     def _count_batch_placed_items(self, batch: OutboundBatch) -> int:
         return sum(
             len(action.placed_items)
