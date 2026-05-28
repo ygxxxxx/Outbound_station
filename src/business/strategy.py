@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import TYPE_CHECKING
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from collections import Counter
 
 if TYPE_CHECKING:
@@ -8,7 +8,16 @@ if TYPE_CHECKING:
 
 from src.utils.logger import logger
 from src.models.containers import CabinetStore, SlotInfo
-from src.models.outbound_plan_model import OutboundPlan, OutboundBatch, PackageSegment, StationBatchPlan, GripperAction, PlacedItem
+from src.models.outbound_plan_model import (
+    OutboundPlan,
+    OutboundBatch,
+    PackageSegment,
+    StationBatchPlan,
+    GripperAction,
+    PlacedItem,
+    LocationMoveAction,
+    CabinetBackwardAction,
+)
 from src.models.outbound_task_model import Package
 
 
@@ -88,6 +97,9 @@ class PackagePlanInfo:
     station_codes: list[str]    # 涉及的工作站
     is_cross_station: bool      # 是否跨越工作站
     is_multi_slot: bool         # 是否涉及多个库位
+    clears_front_blocker: bool   # 是否正在清理会阻挡后排补位的前排库位
+    before_backwards: list[CabinetBackwardAction] = field(default_factory=list) # 这个计划段执行前需要先做的库位后退
+    before_moves: list[LocationMoveAction] = field(default_factory=list)        # 这个计划段执行前需要先做的库位移动
 
 
 # 表示已经下发或准备下发的一次真实夹取动作。
@@ -130,7 +142,14 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
     # 后续每计划一个包裹，就从模拟库存里扣掉已经放到流水线的货物
     simulated_inventory = build_simulated_inventory_from_store(cabinet_store)
     pending_packages = list(packages)
+    remaining_goods_by_package = {
+        package.package_id: list(package.goods)
+        for package in packages
+    }
     package_infos: list[PackagePlanInfo] = []
+    pending_before_backwards: list[CabinetBackwardAction] = []
+    pending_before_moves: list[LocationMoveAction] = []
+    forced_package_id: str | None = None
     last_target_line: str | None = None
     same_line_batch_count = 0
     single_wave_line: str | None = None
@@ -141,14 +160,26 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
 
         # 每一轮只挑“当前模拟库存下已经可直接出库”的包裹
         for package in pending_packages:
+            if forced_package_id is not None and package.package_id != forced_package_id:
+                continue
+            remaining_goods = remaining_goods_by_package.get(package.package_id, [])
+            if not remaining_goods:
+                continue
+            plan_package = package_with_goods(package, remaining_goods)
             slot_picks = choose_slots_for_package(
-                package = package,
+                package = plan_package,
                 simulated_inventory = simulated_inventory,
                 mutate_inventory = False,
             )
             if not slot_picks:
                 continue
-            candidate_infos.append(build_package_info(package, slot_picks))
+            candidate_infos.append(
+                build_package_info(
+                    package = plan_package,
+                    slot_picks = slot_picks,
+                    simulated_inventory = simulated_inventory,
+                )
+            )
 
         if candidate_infos:
             # 候选包裹之间再按规则 3、规则 12 等排序。
@@ -159,31 +190,61 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
                 last_target_line = last_target_line,
                 same_line_batch_count = same_line_batch_count,
             )
-            selected_package = selected_info.package
+            selected_package = find_package_by_id(pending_packages, selected_info.package_id)
+            if selected_package is None:
+                raise ValueError(f"包裹 {selected_info.package_id} 已不在待计划列表中")
 
             # 同一流水线的单件包裹不需要独占，应优先铺满 A/B/C 中能够供货的全局夹爪。
             # 如果单件包裹数量超过本批最多六个可用夹爪，再让已经整库位夹货的夹爪
             # 在后续批次继续放置剩余货物。例如六个夹爪都能提供目标 SKU 时，第一批
             # 应最多并行出六个单件包裹，而不是持续只使用排序最靠前的一个夹爪。
             if is_single_package_info(selected_info):
-                if selected_info.target_line != single_wave_line:
+                if selected_info.clears_front_blocker:
+                    # 清障包裹的优先级高于单件合批铺满夹爪。
+                    # 这里不能为了避开已使用夹爪而换到其他库位，否则真正挡住后排的前排库位可能没有被清掉。
+                    avoided_grippers = set()
+                elif selected_info.target_line != single_wave_line:
                     single_wave_line = selected_info.target_line
                     single_wave_grippers = set()
-                avoided_grippers = single_wave_grippers
+                    avoided_grippers = single_wave_grippers
+                else:
+                    avoided_grippers = single_wave_grippers
             else:
                 single_wave_line = None
                 single_wave_grippers = set()
                 avoided_grippers = set()
 
+            selected_plan_package = package_with_goods(
+                selected_package,
+                remaining_goods_by_package[selected_package.package_id],
+            )
             selected_slot_picks = choose_slots_for_package(
-                package = selected_package,
+                package = selected_plan_package,
                 simulated_inventory = simulated_inventory,
                 mutate_inventory = True,
                 avoid_global_grippers = avoided_grippers,
             )
-            selected_info = build_package_info(selected_package, selected_slot_picks)
+            selected_info = build_package_info(
+                package = selected_plan_package,
+                slot_picks = selected_slot_picks,
+                simulated_inventory = simulated_inventory,
+                before_backwards = pending_before_backwards,
+                before_moves = pending_before_moves,
+            )
             package_infos.append(selected_info)
-            pending_packages.remove(selected_package)
+            pending_before_backwards = []
+            pending_before_moves = []
+            consume_remaining_goods(
+                remaining_goods_by_package,
+                selected_info.package_id,
+                planned_goods_from_slot_picks(selected_slot_picks),
+            )
+            if not remaining_goods_by_package[selected_info.package_id]:
+                remove_pending_package(pending_packages, selected_info.package_id)
+                forced_package_id = None
+            elif forced_package_id == selected_info.package_id:
+                # 同一个包裹已经进入前后排连续处理，后续继续优先处理它，避免中途插入其他包裹。
+                forced_package_id = selected_info.package_id
 
             if is_single_package_info(selected_info):
                 selected_gripper_id = selected_info.slot_picks[0].global_gripper_id
@@ -206,7 +267,41 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
         if shift_back_goods_to_front(simulated_inventory):
             continue
 
-        raise ValueError(build_unschedulable_message(pending_packages, simulated_inventory))
+        same_package_info = try_build_same_package_front_blocker_info(
+            pending_packages = pending_packages,
+            remaining_goods_by_package = remaining_goods_by_package,
+            simulated_inventory = simulated_inventory,
+        )
+        if same_package_info is not None:
+            package_infos.append(same_package_info)
+            consume_remaining_goods(
+                remaining_goods_by_package,
+                same_package_info.package_id,
+                planned_goods_from_slot_picks(same_package_info.slot_picks),
+            )
+            if not remaining_goods_by_package[same_package_info.package_id]:
+                remove_pending_package(pending_packages, same_package_info.package_id)
+                forced_package_id = None
+            else:
+                forced_package_id = same_package_info.package_id
+            single_wave_line = None
+            single_wave_grippers = set()
+            continue
+
+        resolved = try_resolve_by_location_adjustment(
+            pending_packages = pending_packages,
+            remaining_goods_by_package = remaining_goods_by_package,
+            simulated_inventory = simulated_inventory,
+        )
+        if resolved is not None:
+            before_backwards, before_moves = resolved
+            pending_before_backwards.extend(before_backwards)
+            pending_before_moves.extend(before_moves)
+            single_wave_line = None
+            single_wave_grippers = set()
+            continue
+
+        raise ValueError(build_unschedulable_message(pending_packages, simulated_inventory, remaining_goods_by_package))
 
     return package_infos
 
@@ -277,7 +372,13 @@ def choose_slots_for_package(package: Package,
 
     return selected
 
-def build_package_info(package: Package, slot_picks: list[SlotPick]) -> PackagePlanInfo:
+def build_package_info(
+    package: Package,
+    slot_picks: list[SlotPick],
+    simulated_inventory: dict[str, list[str]] | None = None,
+    before_backwards: list[CabinetBackwardAction] | None = None,
+    before_moves: list[LocationMoveAction] | None = None,
+) -> PackagePlanInfo:
     station_codes = sorted({slot_pick.station_code for slot_pick in slot_picks})
     target_line = normalize_line(package.packaging_line, package.manual_process_type)
 
@@ -290,7 +391,325 @@ def build_package_info(package: Package, slot_picks: list[SlotPick]) -> PackageP
         station_codes = station_codes,
         is_cross_station = len(station_codes) > 1,
         is_multi_slot = len(slot_picks) > 1,
+        clears_front_blocker = package_clears_front_blocker(slot_picks, simulated_inventory),
+        before_backwards = list(before_backwards or []),
+        before_moves = list(before_moves or []),
     )
+
+def package_clears_front_blocker(
+    slot_picks: list[SlotPick],
+    simulated_inventory: dict[str, list[str]] | None,
+) -> bool:
+    if simulated_inventory is None:
+        return False
+
+    return any(
+        is_front_slot_blocking_back_goods(
+            location_code = slot_pick.location_code,
+            simulated_inventory = simulated_inventory,
+        )
+        for slot_pick in slot_picks
+    )
+
+def is_front_slot_blocking_back_goods(
+    location_code: str,
+    simulated_inventory: dict[str, list[str]],
+) -> bool:
+    station_code, layer, position = CabinetStore.parse_location(location_code)
+
+    if position not in FRONT_POSITIONS:
+        return False
+
+    # 当前后排补位逻辑要求同层两个前排都清空后才能整体补位。
+    # 所以只要同层后排还有货，这个前排库位就属于清障优先候选。
+    return any(
+        simulated_inventory.get(f"{station_code}{layer}{back_position}", [])
+        for back_position in BACK_POSITIONS
+    )
+
+def package_with_goods(package: Package, goods: list[str]) -> Package:
+    return replace(package, goods=list(goods), count=len(goods))
+
+def find_package_by_id(packages: list[Package], package_id: str) -> Package | None:
+    for package in packages:
+        if package.package_id == package_id:
+            return package
+    return None
+
+def remove_pending_package(packages: list[Package], package_id: str) -> None:
+    package = find_package_by_id(packages, package_id)
+    if package is not None:
+        packages.remove(package)
+
+def planned_goods_from_slot_picks(slot_picks: list[SlotPick]) -> list[str]:
+    return [
+        sku
+        for slot_pick in slot_picks
+        for sku in slot_pick.planned_goods
+    ]
+
+def consume_remaining_goods(
+    remaining_goods_by_package: dict[str, list[str]],
+    package_id: str,
+    planned_goods: list[str],
+) -> None:
+    remaining_goods = remaining_goods_by_package[package_id]
+    for sku in planned_goods:
+        if sku not in remaining_goods:
+            raise ValueError(f"包裹 {package_id} 剩余需求中不存在已计划 SKU: {sku}")
+        remaining_goods.remove(sku)
+
+def front_location_for_back_slot(back_location: str) -> str:
+    station_code, layer, position = CabinetStore.parse_location(back_location)
+    if position not in BACK_TO_FRONT_POSITION:
+        raise ValueError(f"{back_location} 不是后排库位")
+    return f"{station_code}{layer}{BACK_TO_FRONT_POSITION[position]}"
+
+def back_location_for_front_slot(front_location: str) -> str:
+    station_code, layer, position = CabinetStore.parse_location(front_location)
+    if position not in FRONT_POSITIONS:
+        raise ValueError(f"{front_location} 不是前排库位")
+    return f"{station_code}{layer}{position + 2}"
+
+def try_build_same_package_front_blocker_info(
+    pending_packages: list[Package],
+    remaining_goods_by_package: dict[str, list[str]],
+    simulated_inventory: dict[str, list[str]],
+) -> PackagePlanInfo | None:
+    for package in pending_packages:
+        remaining_goods = remaining_goods_by_package.get(package.package_id, [])
+        if not remaining_goods:
+            continue
+
+        package_need = Counter(remaining_goods)
+        for station_code in STATION_CODES:
+            for layer in range(1, 5):
+                front_locations = [
+                    f"{station_code}{layer}{front_position}"
+                    for front_position in FRONT_POSITIONS
+                    if simulated_inventory.get(f"{station_code}{layer}{front_position}", [])
+                ]
+                if len(front_locations) != 1:
+                    continue
+
+                front_location = front_locations[0]
+                front_goods = list(simulated_inventory.get(front_location, []))
+                if not front_goods or len(front_goods) > MAX_GRIPPER_COUNT:
+                    continue
+                if not goods_all_in_need(front_goods, package_need):
+                    continue
+
+                back_locations = [f"{station_code}{layer}{back_position}" for back_position in BACK_POSITIONS]
+                if not any(back_goods_needed_by_package(location, package_need, simulated_inventory) for location in back_locations):
+                    continue
+
+                plan_package = package_with_goods(package, front_goods)
+                slot_pick = build_slot_pick(
+                    package = plan_package,
+                    slot = SlotInfo(location_code = front_location, goods = front_goods),
+                    planned_goods = front_goods,
+                )
+                simulated_inventory[front_location] = simulated_inventory[front_location][len(front_goods):]
+                logger.info(
+                    f"同包裹前排阻挡先出: package={package.package_id}, "
+                    f"location={front_location}, goods={front_goods}"
+                )
+                return build_package_info(
+                    package = plan_package,
+                    slot_picks = [slot_pick],
+                    simulated_inventory = simulated_inventory,
+                )
+
+    return None
+
+def goods_all_in_need(goods: list[str], need: Counter[str]) -> bool:
+    local_need = need.copy()
+    for sku in goods:
+        if local_need.get(sku, 0) <= 0:
+            return False
+        local_need[sku] -= 1
+    return True
+
+def back_goods_needed_by_package(
+    location_code: str,
+    need: Counter[str],
+    simulated_inventory: dict[str, list[str]],
+) -> bool:
+    goods = simulated_inventory.get(location_code, [])
+    return bool(goods and any(need.get(sku, 0) > 0 for sku in goods))
+
+def try_resolve_by_location_adjustment(
+    pending_packages: list[Package],
+    remaining_goods_by_package: dict[str, list[str]],
+    simulated_inventory: dict[str, list[str]],
+) -> tuple[list[CabinetBackwardAction], list[LocationMoveAction]] | None:
+    blocker = find_front_blocker_for_pending_back_goods(
+        pending_packages = pending_packages,
+        remaining_goods_by_package = remaining_goods_by_package,
+        simulated_inventory = simulated_inventory,
+    )
+    if blocker is None:
+        return None
+
+    front_location, package_id, back_location = blocker
+    before_backwards: list[CabinetBackwardAction] = []
+    target_location = find_empty_front_buffer_slot(front_location, simulated_inventory)
+
+    if target_location is None:
+        backward_action = build_backward_action_for_buffer(front_location, simulated_inventory)
+        if backward_action is None:
+            logger.info(
+                f"库位调控失败: package={package_id}, back_location={back_location}, "
+                f"front_location={front_location}, front_goods={simulated_inventory.get(front_location, [])}"
+            )
+            return None
+
+        apply_backward_to_simulation(backward_action, simulated_inventory)
+        before_backwards.append(backward_action)
+        _, _, position = CabinetStore.parse_location(front_location)
+        target_location = f"{backward_action.station_code}{backward_action.layer}{position}"
+
+    move_action = build_location_move_action(
+        from_location = front_location,
+        to_location = target_location,
+        simulated_inventory = simulated_inventory,
+    )
+    apply_location_move_to_simulation(move_action, simulated_inventory)
+    logger.info(
+        f"策略生成库位调控: package={package_id}, blocked_back={back_location}, "
+        f"move={move_action.from_location}->{move_action.to_location}, goods={move_action.goods}"
+    )
+    return before_backwards, [move_action]
+
+def find_front_blocker_for_pending_back_goods(
+    pending_packages: list[Package],
+    remaining_goods_by_package: dict[str, list[str]],
+    simulated_inventory: dict[str, list[str]],
+) -> tuple[str, str, str] | None:
+    for package in pending_packages:
+        need = Counter(remaining_goods_by_package.get(package.package_id, []))
+        if not need:
+            continue
+
+        for location_code in sorted(simulated_inventory.keys(), key = location_sort_key):
+            _, _, position = CabinetStore.parse_location(location_code)
+            if position not in BACK_POSITIONS:
+                continue
+            if not back_goods_needed_by_package(location_code, need, simulated_inventory):
+                continue
+
+            front_location = front_location_for_back_slot(location_code)
+            if simulated_inventory.get(front_location, []):
+                return front_location, package.package_id, location_code
+
+    return None
+
+def find_empty_front_buffer_slot(
+    from_location: str,
+    simulated_inventory: dict[str, list[str]],
+) -> str | None:
+    station_code, _, position = CabinetStore.parse_location(from_location)
+
+    for layer in range(1, 5):
+        candidate = f"{station_code}{layer}{position}"
+        if candidate == from_location:
+            continue
+        if not simulated_inventory.get(candidate, []):
+            return candidate
+
+    return None
+
+def build_backward_action_for_buffer(
+    from_location: str,
+    simulated_inventory: dict[str, list[str]],
+) -> CabinetBackwardAction | None:
+    station_code, from_layer, _ = CabinetStore.parse_location(from_location)
+
+    for layer in range(1, 5):
+        if layer == from_layer:
+            continue
+        back_left = f"{station_code}{layer}3"
+        back_right = f"{station_code}{layer}4"
+        if simulated_inventory.get(back_left, []) or simulated_inventory.get(back_right, []):
+            continue
+
+        station_id = station_id_from_code(station_code)
+        moved_goods = {
+            f"{station_code}{layer}1->{station_code}{layer}3": list(simulated_inventory.get(f"{station_code}{layer}1", [])),
+            f"{station_code}{layer}2->{station_code}{layer}4": list(simulated_inventory.get(f"{station_code}{layer}2", [])),
+        }
+        return CabinetBackwardAction(
+            station_code = station_code,
+            station_id = station_id,
+            layer = layer,
+            moved_goods = {key: value for key, value in moved_goods.items() if value},
+        )
+
+    return None
+
+def apply_backward_to_simulation(
+    action: CabinetBackwardAction,
+    simulated_inventory: dict[str, list[str]],
+) -> None:
+    station_code = action.station_code
+    layer = action.layer
+    left_front = f"{station_code}{layer}1"
+    right_front = f"{station_code}{layer}2"
+    left_back = f"{station_code}{layer}3"
+    right_back = f"{station_code}{layer}4"
+
+    if simulated_inventory.get(left_back, []) or simulated_inventory.get(right_back, []):
+        raise ValueError(f"{station_code}{layer}层后排不为空，不能模拟后退")
+
+    simulated_inventory[left_back] = list(simulated_inventory.get(left_front, []))
+    simulated_inventory[right_back] = list(simulated_inventory.get(right_front, []))
+    simulated_inventory[left_front] = []
+    simulated_inventory[right_front] = []
+    logger.info(f"模拟库位后退: 工作站={station_code}, layer={layer}, moved={action.moved_goods}")
+
+def build_location_move_action(
+    from_location: str,
+    to_location: str,
+    simulated_inventory: dict[str, list[str]],
+) -> LocationMoveAction:
+    from_station, from_layer, from_position = CabinetStore.parse_location(from_location)
+    to_station, to_layer, to_position = CabinetStore.parse_location(to_location)
+
+    if from_station != to_station:
+        raise ValueError(f"库位移动不能跨工作站: {from_location}->{to_location}")
+    if from_position != to_position:
+        raise ValueError(f"库位移动不能跨夹爪列: {from_location}->{to_location}")
+
+    goods = list(simulated_inventory.get(from_location, []))
+    if not goods:
+        raise ValueError(f"库位移动原库位为空: {from_location}")
+    if simulated_inventory.get(to_location, []):
+        raise ValueError(f"库位移动目标库位不为空: {to_location}")
+
+    station_id = station_id_from_code(from_station)
+    local_gripper_id = gripper_id_from_position(from_position)
+    return LocationMoveAction(
+        station_code = from_station,
+        station_id = station_id,
+        gripper_id = global_gripper_id(station_id, local_gripper_id),
+        from_location = from_location,
+        to_location = to_location,
+        from_layer = from_layer,
+        to_layer = to_layer,
+        goods = goods,
+    )
+
+def apply_location_move_to_simulation(
+    action: LocationMoveAction,
+    simulated_inventory: dict[str, list[str]],
+) -> None:
+    if not simulated_inventory.get(action.from_location, []):
+        raise ValueError(f"模拟库位移动失败，原库位为空: {action.from_location}")
+    if simulated_inventory.get(action.to_location, []):
+        raise ValueError(f"模拟库位移动失败，目标库位不为空: {action.to_location}")
+
+    simulated_inventory[action.to_location] = list(simulated_inventory[action.from_location])
+    simulated_inventory[action.from_location] = []
 
 def build_simulated_inventory_from_store(cabinet_store: CabinetStore) -> dict[str, list[str]]:
     simulated_inventory: dict[str, list[str]] = {}
@@ -328,14 +747,58 @@ def shift_back_goods_to_front(simulated_inventory: dict[str, list[str]]) -> bool
 def build_unschedulable_message(
     pending_packages: list[Package],
     simulated_inventory: dict[str, list[str]],
+    remaining_goods_by_package: dict[str, list[str]] | None = None,
 ) -> str:
     package_ids = [package.package_id for package in pending_packages]
+    remaining_needs = {
+        package.package_id: list(remaining_goods_by_package.get(package.package_id, package.goods))
+        for package in pending_packages
+    } if remaining_goods_by_package is not None else {
+        package.package_id: list(package.goods)
+        for package in pending_packages
+    }
     remaining_goods = {
         location_code: goods
         for location_code, goods in simulated_inventory.items()
         if goods
     }
-    return f"剩余包裹无法继续生成出库计划: packages={package_ids}, remaining_inventory={remaining_goods}"
+    blockers = find_blocking_details(pending_packages, remaining_needs, simulated_inventory)
+    return (
+        f"剩余包裹无法继续生成出库计划: packages={package_ids}, "
+        f"remaining_needs={remaining_needs}, blockers={blockers}, "
+        f"remaining_inventory={remaining_goods}"
+    )
+
+def find_blocking_details(
+    pending_packages: list[Package],
+    remaining_needs: dict[str, list[str]],
+    simulated_inventory: dict[str, list[str]],
+) -> list[dict]:
+    details: list[dict] = []
+    for package in pending_packages:
+        need = Counter(remaining_needs.get(package.package_id, []))
+        for location_code in sorted(simulated_inventory.keys(), key = location_sort_key):
+            station_code, layer, position = CabinetStore.parse_location(location_code)
+            if position not in BACK_POSITIONS:
+                continue
+            back_goods = simulated_inventory.get(location_code, [])
+            if not back_goods or not any(need.get(sku, 0) > 0 for sku in back_goods):
+                continue
+
+            front_location = front_location_for_back_slot(location_code)
+            front_goods = simulated_inventory.get(front_location, [])
+            if front_goods:
+                details.append({
+                    "package_id": package.package_id,
+                    "back_location": location_code,
+                    "back_goods": list(back_goods),
+                    "front_location": front_location,
+                    "front_goods": list(front_goods),
+                    "reason": "后排待出货物被前排货物阻挡，且未找到可用库位调控方案",
+                    "station": station_code,
+                    "layer": layer,
+                })
+    return details
 
 def sort_package_infos(package_infos: list[PackagePlanInfo]) -> list[PackagePlanInfo]:
     return sorted(package_infos, key = package_sort_key)
@@ -506,6 +969,7 @@ def build_single_package_batch(
         exclusive_package_id = None,
         package_ids = [info.package_id for info in infos],
     )
+    attach_pre_actions_to_batch(batch, infos)
     attach_actions_to_batch(batch, command_actions)
     fill_idle_actions(batch)
     update_batch_sequence_range(batch)
@@ -571,12 +1035,19 @@ def build_batches_for_package(
             exclusive_package_id = info.package_id if should_keep_package_exclusive(info) else None,
             package_ids = [info.package_id],
         )
+        if batch_no == start_batch_no:
+            attach_pre_actions_to_batch(batch, [info])
         attach_actions_to_batch(batch, command_actions)
         fill_idle_actions(batch)
         update_batch_sequence_range(batch)
         package_batches.append(batch)
 
     return package_batches, last_batch_no + 1, next_sequence
+
+def attach_pre_actions_to_batch(batch: OutboundBatch, infos: list[PackagePlanInfo]) -> None:
+    for info in infos:
+        batch.before_backwards.extend(info.before_backwards)
+        batch.before_moves.extend(info.before_moves)
 
 def reuse_consecutive_physical_picks(batches: list[OutboundBatch]) -> None:
     active_picks: dict[tuple[int, str], ActivePhysicalPick] = {}
@@ -724,6 +1195,11 @@ def build_package_segments(
     batches: list[OutboundBatch],
 ) -> list[PackageSegment]:
     info_by_id = {info.package_id: info for info in package_infos}
+    station_codes_by_id: dict[str, set[str]] = {}
+    exclusive_by_id: dict[str, bool] = {}
+    for info in package_infos:
+        station_codes_by_id.setdefault(info.package_id, set()).update(info.station_codes)
+        exclusive_by_id[info.package_id] = exclusive_by_id.get(info.package_id, False) or should_keep_package_exclusive(info)
     package_items: dict[str, list[PlacedItem]] = {}
     package_batches: dict[str, set[int]] = {}
 
@@ -751,8 +1227,8 @@ def build_package_segments(
                 batch_end = batch_numbers[-1],
                 sequence_start = sequences[0],
                 sequence_end = sequences[-1],
-                station_codes = list(info.station_codes),
-                exclusive = should_keep_package_exclusive(info),
+                station_codes = sorted(station_codes_by_id.get(package_id, set(info.station_codes))),
+                exclusive = exclusive_by_id.get(package_id, should_keep_package_exclusive(info)),
             )
         )
 
@@ -1198,20 +1674,27 @@ def normalize_line(line: str | None, manual_process_type: str | None = None) -> 
     return mapping.get(line or "", line or "")
 
 # 排序函数
-def package_sort_key(info: PackagePlanInfo) -> tuple[int, int, int, str]:
+def package_sort_key(info: PackagePlanInfo) -> tuple:
     if info.total_goods == 1:
         return (
+            front_clearance_priority(info),
             priority_group(info),
             line_priority(info.target_line),
             0,
             info.package_id,
         )
     return (
+        front_clearance_priority(info),
         priority_group(info),
         info.total_goods,
         line_priority(info.target_line),
         info.package_id,
     )
+
+# 前排清障优先级最高：只要包裹当前使用的前排库位挡住了同层后排货物，
+# 就必须排在普通单件包裹、跨工作站包裹等业务排序之前。
+def front_clearance_priority(info: PackagePlanInfo) -> int:
+    return 0 if info.clears_front_blocker else 1
 
 # 单个货物包裹先出，其次出跨越工作站的多盒包裹，最后出多盒在同一工作站的包裹
 def priority_group(info: PackagePlanInfo) -> int:

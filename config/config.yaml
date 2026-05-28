@@ -13,7 +13,7 @@ RCS:
 
 # 视觉门配置
 visiongate:
-    vg_address: "127.0.0.1"
+    vg_address: "192.168.2.100"
     vg_port: 23320
 
 

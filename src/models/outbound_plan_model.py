@@ -42,6 +42,28 @@ class StationBatchPlan:
     actions: list[GripperAction] = field(default_factory=list)      # 保存这台工作站两个夹爪的动作
 
 
+# 库位移动动作
+@dataclass
+class LocationMoveAction:
+    station_code: str           # 工作站编码
+    station_id: int             # 工作站id
+    gripper_id: int             # 夹爪编码
+    from_location: str          # 移动前库位
+    to_location: str            # 移动后库位
+    from_layer: int             # 移动前层号
+    to_layer: int               # 移动后层号
+    goods: list[str]            # 货物列表
+
+
+# 库位传送带后退动作，用于把某层 1/2 位货物退到 3/4 位，腾出前排临时缓存位
+@dataclass
+class CabinetBackwardAction:
+    station_code: str           # 工作站编码
+    station_id: int             # 工作站id
+    layer: int                  # 需要后退的层号
+    moved_goods: dict[str, list[str]] = field(default_factory=dict) # 模拟库存中本次后退移动的货物
+
+
 # 表示三台工作站六个夹爪的一批出库安排
 @dataclass
 class OutboundBatch:
@@ -54,7 +76,8 @@ class OutboundBatch:
     sequence_start: int | None = None   # 这一批真实落线货物的序号范围，假设有四个货物落线，则start: 7
     sequence_end: int | None = None     # 这一批真实落线货物的序号范围，假设有四个货物落线，则end：10
     outbound_count: int = 0      # 本批次真实放到出库流水线上的鞋盒数量，PLC 用它控制速度并校验出库数量
-
+    before_backwards: list[CabinetBackwardAction] = field(default_factory=list)
+    before_moves: list[LocationMoveAction] = field(default_factory=list)
 
 # 用于记录一个包裹在计划中的连续出库段
 @dataclass
@@ -79,3 +102,4 @@ class OutboundPlan:
     total_goods: int            # 全部出库货物数量
     batches: list[OutboundBatch] = field(default_factory=list)      # 整个任务批次列表，执行层可以按照batches[0],batcher[1]来执行
     package_segments: list[PackageSegment] = field(default_factory=list)     # 包裹连续段列表
+    

@@ -4,7 +4,16 @@ from src.business.state_machine import StateMachine, StationState
 from src.business.strategy import strategy
 from src.business.task_manager import TaskManager, QueueTask
 from src.models.containers import CabinetStore
-from src.models.outbound_plan_model import OutboundPlan, OutboundBatch, PackageSegment, StationBatchPlan, GripperAction, PlacedItem
+from src.models.outbound_plan_model import (
+    OutboundPlan,
+    OutboundBatch,
+    PackageSegment,
+    StationBatchPlan,
+    GripperAction,
+    PlacedItem,
+    LocationMoveAction,
+    CabinetBackwardAction,
+)
 
 from src.utils.logger import logger
 
@@ -306,6 +315,19 @@ class Task_Processing:
                 f"has_new_plc_command={has_new_plc_command}"
             )
 
+            for backward in batch.before_backwards:
+                logger.info(
+                    f"  批次前库位后退: 工作站={backward.station_code}, "
+                    f"layer={backward.layer}, moved_goods={backward.moved_goods}"
+                )
+
+            for move in batch.before_moves:
+                logger.info(
+                    f"  批次前库位移动: G{move.gripper_id}, "
+                    f"{move.from_location}(layer={move.from_layer}) -> "
+                    f"{move.to_location}(layer={move.to_layer}), goods={move.goods}"
+                )
+
             for station_plan in batch.station_plans:
                 for action in station_plan.actions:
                     if action.action_type == "idle":
@@ -363,6 +385,8 @@ class Task_Processing:
             if self._stop_event.is_set():
                 raise RuntimeError("任务处理已停止，出库计划中断")
 
+            self._execute_batch_before_backwards(batch)
+            self._execute_batch_before_moves(batch)
             self._execute_required_front_refill_before_batch(batch)
             self._execute_batch(
                 batch,
@@ -390,6 +414,57 @@ class Task_Processing:
             wave_duration = max(action.place_count for action in command_actions)
             return_batches.add(batch.batch_no + wave_duration - 1)
         return return_batches
+
+    # 执行策略计划的库位后退动作，用于先腾出同列前排临时缓存位
+    def _execute_batch_before_backwards(self, batch: OutboundBatch) -> None:
+        for action in batch.before_backwards:
+            logger.info(
+                f"批次 {batch.batch_no} 执行前库位后退: "
+                f"工作站={action.station_code}, layer={action.layer}, "
+                f"planned_moved={action.moved_goods}"
+            )
+            self.plc_service.command_cabinet_backward(action.station_id, action.layer)
+            self._wait_backward_complete(action, batch.batch_no)
+
+            moved_goods = self.cabinet_store.move_front_goods_to_back(
+                action.station_code,
+                action.layer,
+            )
+            logger.info(
+                f"批次 {batch.batch_no} 库位后退库存同步完成: "
+                f"actual_moved={moved_goods}"
+            )
+
+    # 执行策略计划的库位移动动作。库位移动是夹爪独立动作，只等待对应夹爪空闲。
+    def _execute_batch_before_moves(self, batch: OutboundBatch) -> None:
+        for move in batch.before_moves:
+            logger.info(
+                f"批次 {batch.batch_no} 执行前库位移动: "
+                f"G{move.gripper_id}, {move.from_location}->{move.to_location}, "
+                f"goods={move.goods}"
+            )
+            self._wait_gripper_idle(move.gripper_id, batch.batch_no, "库位移动前")
+            self.plc_service.command_location_move(
+                gripper_id=move.gripper_id,
+                pick_layer=move.from_layer,
+                place_layer=move.to_layer,
+            )
+            self._wait_gripper_idle(move.gripper_id, batch.batch_no, "库位移动完成")
+
+            moved_goods = self.cabinet_store.move_goods_between_slots(
+                move.from_location,
+                move.to_location,
+            )
+            if moved_goods != move.goods:
+                raise RuntimeError(
+                    f"批次 {batch.batch_no} 库位移动库存不一致: "
+                    f"plan={move.goods}, actual={moved_goods}, "
+                    f"move={move.from_location}->{move.to_location}"
+                )
+            logger.info(
+                f"批次 {batch.batch_no} 库位移动库存同步完成: "
+                f"{move.from_location}->{move.to_location}, goods={moved_goods}"
+            )
 
     # 解析出库批次并执行
     def _execute_batch(self, batch: OutboundBatch, package_lookup: dict, return_remaining_boxes: bool = False) -> None:
@@ -564,6 +639,68 @@ class Task_Processing:
             self._stop_event.wait(timeout=0.2)
 
         raise RuntimeError(f"任务停止，批次 {batch_no} 等待夹爪空闲中断")
+
+    # 库位移动只需要等待参与移动的单个夹爪空闲，不能套用六夹爪同步波次规则。
+    def _wait_gripper_idle(
+        self,
+        gripper_id: int,
+        batch_no: int,
+        wait_reason: str,
+        timeout: float = 60.0,
+    ) -> None:
+        deadline = time.time() + timeout
+
+        while not self._stop_event.is_set():
+            if self.plc_service.is_emergency_stop():
+                raise RuntimeError(f"批次 {batch_no} {wait_reason}时触发急停")
+
+            state = self.plc_service.get_gripper_state(gripper_id)
+            if state is not None and not state.is_running:
+                logger.info(f"批次 {batch_no} {wait_reason}: 夹爪{gripper_id}已空闲")
+                return
+
+            if time.time() > deadline:
+                raise TimeoutError(f"批次 {batch_no} {wait_reason}等待夹爪{gripper_id}空闲超时")
+
+            self._stop_event.wait(timeout=0.2)
+
+        raise RuntimeError(f"任务停止，批次 {batch_no} 等待夹爪{gripper_id}空闲中断")
+
+    # 等待传送带后退到位。后退用于把 1/2 位货物退到 3/4 位，所以等待后光电触发。
+    def _wait_backward_complete(
+        self,
+        action: CabinetBackwardAction,
+        batch_no: int,
+        timeout: float = 30.0,
+    ) -> None:
+        deadline = time.time() + timeout
+
+        while not self._stop_event.is_set():
+            if self.plc_service.is_emergency_stop():
+                raise RuntimeError(f"批次 {batch_no} 库位后退过程中触发急停")
+
+            if self.plc_service.is_cabinet_timeout(action.station_id, action.layer):
+                raise RuntimeError(
+                    f"批次 {batch_no} 库位后退失败: "
+                    f"工作站{action.station_id} {action.layer}层传送带超时"
+                )
+
+            if self.plc_service.is_photo_triggered(action.station_id, action.layer, "back"):
+                logger.info(
+                    f"批次 {batch_no} 库位后退完成: "
+                    f"工作站{action.station_id} {action.layer}层后光电已触发"
+                )
+                return
+
+            if time.time() > deadline:
+                raise TimeoutError(
+                    f"批次 {batch_no} 等待工作站{action.station_id} "
+                    f"{action.layer}层库位后退完成超时"
+                )
+
+            self._stop_event.wait(timeout=0.2)
+
+        raise RuntimeError(f"任务停止，批次 {batch_no} 等待库位后退中断")
 
     # 更新库位
     def _update_cabinet_store_after_batch(self, batch: OutboundBatch) -> None:

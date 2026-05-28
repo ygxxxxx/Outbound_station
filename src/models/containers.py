@@ -169,6 +169,50 @@ class CabinetStore:
             moved_goods[f"{back_location}->{front_location}"] = goods
 
         return moved_goods
+
+    # 当前层后排库位为空时，将前排货物同步后退到后排库位，腾出机械臂可放置的前排库位
+    def move_front_goods_to_back(self, station_prefix: str, layer: int) -> dict[str, list[str]]:
+        if station_prefix not in ("A", "B", "C"):
+            raise ValueError(f"未知工作站编号: {station_prefix}")
+        if not 1 <= layer <= 4:
+            raise ValueError(f"未知库位层号: {layer}")
+
+        back_locations = [f"{station_prefix}{layer}{position}" for position in (3, 4)]
+        if any(not self._slots[location_code].is_empty for location_code in back_locations):
+            raise RuntimeError(f"{station_prefix}{layer}层后排仍有货物，不能执行库位后退")
+
+        moved_goods: dict[str, list[str]] = {}
+        for front_position, back_position in ((1, 3), (2, 4)):
+            front_location = f"{station_prefix}{layer}{front_position}"
+            back_location = f"{station_prefix}{layer}{back_position}"
+            front_slot = self._slots[front_location]
+            back_slot = self._slots[back_location]
+
+            if front_slot.is_empty:
+                continue
+
+            goods = list(front_slot.goods)
+            back_slot.goods = goods
+            front_slot.clear()
+            moved_goods[f"{front_location}->{back_location}"] = goods
+
+        return moved_goods
+
+    # 将整库位货物移动到另一个空库位，用于同步库位调控后的真实库存
+    def move_goods_between_slots(self, from_location: str, to_location: str) -> list[str]:
+        from_slot = self._slots.get(from_location)
+        to_slot = self._slots.get(to_location)
+        if from_slot is None or to_slot is None:
+            raise ValueError(f"库位移动失败，库位不存在: {from_location}->{to_location}")
+        if from_slot.is_empty:
+            raise RuntimeError(f"库位移动失败，原库位为空: {from_location}")
+        if not to_slot.is_empty:
+            raise RuntimeError(f"库位移动失败，目标库位不为空: {to_location}")
+
+        goods = list(from_slot.goods)
+        to_slot.goods = goods
+        from_slot.clear()
+        return goods
     
     # 清空指定库位的所有货物
     def clear_slot(self, location_code: str) -> bool:
