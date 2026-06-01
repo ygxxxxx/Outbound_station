@@ -6,6 +6,7 @@ from src.utils.logger import logger
 import socket
 import time
 import random
+from datetime import datetime
 import threading
 import copy
 import json
@@ -23,6 +24,7 @@ MANUAL_PROCESS_OPTIONS = ("N", "G", "S")
 PACKAGING_LINE_OPTIONS = ("HS1", "HS2", "MP1", "MA1", "MO1")
 BOX_TYPE_OPTIONS = ("DW01-A", "DW01-B", "DW02-A", "DW02-B")
 GENERATED_OUTBOUND_FILE = Path(__file__).with_name("generated_outbound_tasks.json")
+SIMULATOR_HISTORY_FILE = Path(__file__).with_name("simulator_history.json")
 
 
 # ── RCS Simulator Backend ──────────────────────────────────────────
@@ -99,17 +101,19 @@ class SimulatorApp:
         self.connected = False
         self._last_put_task: dict | None = None
         self._last_out_task: dict | None = None
+        self._history_data: list[dict] = []
 
         self.root = tk.Tk()
         self.root.title("RCS 客户端模拟器")
-        self.root.geometry("1060x800")
-        self.root.minsize(860, 640)
+        self.root.geometry("1280x960")
+        self.root.minsize(1060, 800)
 
         self._build_connection_panel()
         self._build_notebook()
         self._build_response_panel()
         self._build_status_bar()
 
+        self._load_history()
         self._set_connected(False)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -192,6 +196,7 @@ class SimulatorApp:
         self._build_query_tab()
         self._build_putaway_tab()
         self._build_outbound_tab()
+        self._build_history_tab()
 
     # ──── Query Tab ────
 
@@ -286,7 +291,7 @@ class SimulatorApp:
         tree_frame.pack(fill=tk.BOTH, expand=True, pady=4)
 
         cols = ("location", "sku", "count")
-        self.put_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=5)
+        self.put_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=10)
         self.put_tree.heading("location", text="库位")
         self.put_tree.heading("sku", text="SKU")
         self.put_tree.heading("count", text="数量")
@@ -371,7 +376,7 @@ class SimulatorApp:
         tree_frame.pack(fill=tk.BOTH, expand=True, pady=4)
 
         cols = ("pid", "box", "face", "logi", "manual", "pline", "goods")
-        self.out_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=5)
+        self.out_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=10)
         hdr = {"pid": "包裹ID", "box": "纸箱", "face": "面单",
                "logi": "物流", "manual": "人工", "pline": "打包线", "goods": "货物SKU"}
         w = {"pid": 80, "box": 75, "face": 55, "logi": 70, "manual": 50, "pline": 60, "goods": 240}
@@ -389,7 +394,8 @@ class SimulatorApp:
         ttk.Button(btn_row, text="删除选中", command=self._out_del_selected).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_row, text="清空列表", command=self._out_clear).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_row, text="重复上次出库任务", command=self._out_repeat_last).pack(side=tk.LEFT, padx=4)
-        ttk.Button(btn_row, text="随机生成包裹", command=self._out_generate_random_from_storage).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_row, text="随机生成(A站)", command=self._out_generate_station_a).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_row, text="随机生成(全站清空)", command=self._out_generate_all_stations).pack(side=tk.LEFT, padx=4)
         ttk.Button(btn_row, text="下发出库任务", command=self._out_send).pack(side=tk.RIGHT, padx=4)
 
     # ────────────── Response Panel ──────────────
@@ -406,7 +412,7 @@ class SimulatorApp:
         text_frame = ttk.Frame(frame)
         text_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.resp_text = tk.Text(text_frame, height=10, wrap=tk.WORD, state=tk.DISABLED,
+        self.resp_text = tk.Text(text_frame, height=18, wrap=tk.WORD, state=tk.DISABLED,
                                  font=("Consolas", 9), bg="#1e1e1e", fg="#d4d4d4")
         sb = ttk.Scrollbar(text_frame, orient=tk.VERTICAL, command=self.resp_text.yview)
         self.resp_text.configure(yscrollcommand=sb.set)
@@ -522,12 +528,26 @@ class SimulatorApp:
             data = {"clear_conveyor_timeout": 1, "timestamp": int(time.time() * 1000)}
             resp = self.simulator.dispatch_inbound_route(data)
             self.root.after(0, lambda: self._log_response("解除传送带超时报警", resp))
+            self._add_history_record({
+                "type": "query",
+                "timestamp": int(time.time() * 1000),
+                "task_id": "",
+                "summary": "解除传送带超时报警",
+                "data": resp,
+            })
 
         self._run_in_thread(do)
 
     def _do_query(self, label: str, query_fn):
         resp = query_fn()
         self.root.after(0, lambda: self._log_response(label, resp))
+        self._add_history_record({
+            "type": "query",
+            "timestamp": int(time.time() * 1000),
+            "task_id": "",
+            "summary": label,
+            "data": resp,
+        })
 
     # ────────────── Putaway Actions ──────────────
 
@@ -687,6 +707,15 @@ class SimulatorApp:
 
         self._last_put_task = task_data
 
+        total_goods = sum(g["abr_count"] for g in put_goods)
+        self._add_history_record({
+            "type": "putaway",
+            "timestamp": int(time.time() * 1000),
+            "task_id": task_data.get("task_id", ""),
+            "summary": f"{len(put_goods)}个库位, {total_goods}件货物, 工作站={task_data.get('station_id', '')}",
+            "data": copy.deepcopy(task_data),
+        })
+
         def do():
             resp = self.simulator.dispatch_outbound_task(task_data)
             self.root.after(0, lambda: self._log_response("放货任务下发响应", resp))
@@ -782,6 +811,15 @@ class SimulatorApp:
 
         self._last_out_task = task_data
 
+        total_goods = sum(p["count"] for p in packages)
+        self._add_history_record({
+            "type": "outbound",
+            "timestamp": int(time.time() * 1000),
+            "task_id": task_data.get("task_id", ""),
+            "summary": f"{len(packages)}个包裹, {total_goods}件货物",
+            "data": copy.deepcopy(task_data),
+        })
+
         def do():
             resp = self.simulator.dispatch_outbound_task(task_data)
             self.root.after(0, lambda: self._log_response("出库任务下发响应", resp))
@@ -807,12 +845,19 @@ class SimulatorApp:
         self._run_in_thread(do)
         self._log(f"重复上次出库任务: {len(task_data['packages'])}个包裹")
 
-    def _out_generate_random_from_storage(self):
+    def _out_generate_station_a(self):
+        self._out_generate_from_storage_filtered(station_filter="A")
+
+    def _out_generate_all_stations(self):
+        self._out_generate_from_storage_filtered(station_filter=None)
+
+    def _out_generate_from_storage_filtered(self, station_filter: str | None):
         if not self._require_connection():
             return
 
         if self.out_tree.get_children():
-            if not messagebox.askyesno("确认", "随机生成会覆盖当前出库包裹列表，继续？"):
+            label = "工作站A" if station_filter else "全站"
+            if not messagebox.askyesno("确认", f"随机生成({label})会覆盖当前出库包裹列表，继续？"):
                 return
 
         def do():
@@ -824,7 +869,12 @@ class SimulatorApp:
 
             try:
                 container = storage_resp.get("container", [])
-                packages = self._build_random_packages_from_container(container)
+                if station_filter:
+                    container = [
+                        item for item in container
+                        if (item.get("storage_bin") or item.get("storage_location") or item.get("location_code", "")).startswith(station_filter)
+                    ]
+                packages = self._build_full_drain_packages(container)
                 task_data = {
                     "task_id": f"OUT_{int(time.time())}",
                     "task_types": "outbound",
@@ -844,42 +894,52 @@ class SimulatorApp:
 
         self._run_in_thread(do)
 
-    def _build_random_packages_from_container(self, container: list[dict]) -> list[dict]:
+    def _build_full_drain_packages(self, container: list[dict]) -> list[dict]:
         storage_snapshot = self._normalize_container_goods(container)
         goods_pool = [
             sku
             for slot in storage_snapshot
             for sku in slot["goods"]
         ]
-        if len(goods_pool) < 3:
-            raise ValueError("当前库位货物少于3件，无法同时生成单盒包裹和多盒包裹")
+        if not goods_pool:
+            raise ValueError("当前库位没有货物，无法生成出库任务")
 
         random.shuffle(goods_pool)
-        target_total = self._random_target_goods_count(len(goods_pool))
-        selected_goods = goods_pool[:target_total]
-
         packages: list[dict] = []
         package_index = 1
+        total = len(goods_pool)
 
-        # 先强制生成一个多盒包裹和一个单盒包裹，保证能覆盖两种出库策略。
-        multi_size = random.randint(2, min(4, len(selected_goods) - 1))
-        multi_goods = [selected_goods.pop() for _ in range(multi_size)]
+        if total == 1:
+            packages.append(self._build_generated_package(package_index, [goods_pool.pop()]))
+            random.shuffle(packages)
+            self._assert_generated_packages_match_inventory(packages, storage_snapshot)
+            return packages
+
+        if total == 2:
+            packages.append(self._build_generated_package(package_index, [goods_pool.pop(), goods_pool.pop()]))
+            random.shuffle(packages)
+            self._assert_generated_packages_match_inventory(packages, storage_snapshot)
+            return packages
+
+        multi_size = random.randint(2, min(4, total - 1))
+        multi_goods = [goods_pool.pop() for _ in range(multi_size)]
         packages.append(self._build_generated_package(package_index, multi_goods))
         package_index += 1
 
-        single_goods = [selected_goods.pop()]
-        packages.append(self._build_generated_package(package_index, single_goods))
-        package_index += 1
+        if goods_pool:
+            single_goods = [goods_pool.pop()]
+            packages.append(self._build_generated_package(package_index, single_goods))
+            package_index += 1
 
-        while selected_goods:
-            remaining = len(selected_goods)
+        while goods_pool:
+            remaining = len(goods_pool)
             if remaining >= 2 and random.random() < 0.35:
                 size = random.randint(2, min(4, remaining))
             else:
                 size = 1
 
-            goods = [selected_goods.pop() for _ in range(size)]
-            packages.append(self._build_generated_package(package_index, goods))
+            pkg_goods = [goods_pool.pop() for _ in range(size)]
+            packages.append(self._build_generated_package(package_index, pkg_goods))
             package_index += 1
 
         random.shuffle(packages)
@@ -911,13 +971,6 @@ class SimulatorApp:
                 "goods": goods,
             })
         return normalized
-
-    def _random_target_goods_count(self, total_goods: int) -> int:
-        if total_goods <= 12:
-            return total_goods
-        lower = max(8, total_goods // 3)
-        upper = min(total_goods, 40)
-        return random.randint(lower, upper)
 
     def _build_generated_package(self, package_index: int, goods: list[str]) -> dict:
         count = len(goods)
@@ -960,10 +1013,12 @@ class SimulatorApp:
         if overused:
             raise ValueError(f"随机包裹生成数量超过当前库存: {overused}")
 
-        if not any(len(package["goods"]) == 1 for package in packages):
-            raise ValueError("随机包裹生成失败：没有单盒包裹")
-        if not any(len(package["goods"]) > 1 for package in packages):
-            raise ValueError("随机包裹生成失败：没有多盒包裹")
+        total_planned = sum(len(package["goods"]) for package in packages)
+        if total_planned >= 3:
+            if not any(len(package["goods"]) == 1 for package in packages):
+                raise ValueError("随机包裹生成失败：没有单盒包裹")
+            if not any(len(package["goods"]) > 1 for package in packages):
+                raise ValueError("随机包裹生成失败：没有多盒包裹")
 
         for package in packages:
             if len(package["goods"]) > 1 and package["packaging_line"] != "MP1":
@@ -1028,6 +1083,262 @@ class SimulatorApp:
             f"单盒={size_counts.get(1, 0)}，多盒={sum(count for size, count in size_counts.items() if size > 1)}，"
             f"已保存: {saved_path}"
         )
+
+    # ────────────── History Tab ──────────────
+
+    def _build_history_tab(self):
+        tab = ttk.Frame(self.notebook, padding=8)
+        self.notebook.add(tab, text="  历史记录  ")
+
+        filter_row = ttk.Frame(tab)
+        filter_row.pack(fill=tk.X, pady=(0, 4))
+
+        ttk.Label(filter_row, text="筛选:").pack(side=tk.LEFT, padx=(0, 4))
+        self.history_filter = tk.StringVar(value="全部")
+        filter_combo = ttk.Combobox(
+            filter_row, textvariable=self.history_filter,
+            values=["全部", "放货任务", "出库任务", "状态查询"],
+            width=10, state="readonly",
+        )
+        filter_combo.pack(side=tk.LEFT, padx=(0, 8))
+        filter_combo.bind("<<ComboboxSelected>>", lambda _: self._refresh_history_tree())
+
+        ttk.Button(filter_row, text="刷新", command=self._load_and_refresh_history, width=6).pack(side=tk.LEFT, padx=4)
+        ttk.Button(filter_row, text="清空历史", command=self._history_clear).pack(side=tk.RIGHT, padx=4)
+
+        self.history_count_var = tk.StringVar(value="共 0 条记录")
+        ttk.Label(filter_row, textvariable=self.history_count_var).pack(side=tk.RIGHT, padx=8)
+
+        tree_frame = ttk.Frame(tab)
+        tree_frame.pack(fill=tk.BOTH, expand=True, pady=4)
+
+        cols = ("time", "type", "task_id", "summary")
+        self.history_tree = ttk.Treeview(tree_frame, columns=cols, show="headings", height=14)
+        self.history_tree.heading("time", text="时间")
+        self.history_tree.heading("type", text="类型")
+        self.history_tree.heading("task_id", text="任务ID")
+        self.history_tree.heading("summary", text="摘要")
+        self.history_tree.column("time", width=160, anchor=tk.CENTER)
+        self.history_tree.column("type", width=80, anchor=tk.CENTER)
+        self.history_tree.column("task_id", width=200, anchor=tk.CENTER)
+        self.history_tree.column("summary", width=380)
+        self.history_tree.bind("<Double-1>", lambda _: self._history_view_detail())
+
+        sb = ttk.Scrollbar(tree_frame, orient=tk.VERTICAL, command=self.history_tree.yview)
+        self.history_tree.configure(yscrollcommand=sb.set)
+        self.history_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+
+        btn_row = ttk.Frame(tab)
+        btn_row.pack(fill=tk.X, pady=4)
+        ttk.Button(btn_row, text="查看详情", command=self._history_view_detail, width=10).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_row, text="加载到放货任务", command=self._history_load_putaway, width=14).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_row, text="加载到出库任务", command=self._history_load_outbound, width=14).pack(side=tk.LEFT, padx=4)
+        ttk.Button(btn_row, text="删除选中", command=self._history_delete_selected, width=10).pack(side=tk.LEFT, padx=4)
+
+    def _load_history(self):
+        if SIMULATOR_HISTORY_FILE.exists():
+            try:
+                with SIMULATOR_HISTORY_FILE.open("r", encoding="utf-8") as f:
+                    self._history_data = json.load(f)
+                if not isinstance(self._history_data, list):
+                    self._history_data = [self._history_data]
+            except Exception:
+                self._history_data = []
+        else:
+            self._migrate_from_generated_outbound()
+        if hasattr(self, 'history_tree'):
+            self._refresh_history_tree()
+
+    def _load_and_refresh_history(self):
+        self._load_history()
+        self._log("已刷新历史记录")
+
+    def _migrate_from_generated_outbound(self):
+        if not GENERATED_OUTBOUND_FILE.exists():
+            self._history_data = []
+            return
+        try:
+            with GENERATED_OUTBOUND_FILE.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+            if not isinstance(data, list):
+                data = [data]
+            for record in data:
+                task = record.get("outbound_task", {})
+                summary_info = record.get("storage_summary", {})
+                summary = (
+                    f"{task.get('package_count', 0)}个包裹, "
+                    f"{summary_info.get('total_goods', 0)}件货物"
+                )
+                self._history_data.append({
+                    "type": "outbound",
+                    "timestamp": record.get("created_at", 0),
+                    "task_id": task.get("task_id", ""),
+                    "summary": summary,
+                    "data": copy.deepcopy(task),
+                    "storage_snapshot": {
+                        "storage": record.get("storage", []),
+                        "storage_summary": summary_info,
+                    },
+                })
+            self._save_history_to_file()
+            self._log(f"已从 {GENERATED_OUTBOUND_FILE.name} 迁移 {len(data)} 条出库历史记录")
+        except Exception as e:
+            self._log(f"迁移历史记录失败: {e}")
+            self._history_data = []
+
+    def _save_history_to_file(self):
+        try:
+            with SIMULATOR_HISTORY_FILE.open("w", encoding="utf-8") as f:
+                json.dump(self._history_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            self._log(f"保存历史记录失败: {e}")
+
+    def _add_history_record(self, record: dict):
+        self._history_data.append(record)
+        self._save_history_to_file()
+        self.root.after(0, self._refresh_history_tree)
+
+    def _refresh_history_tree(self):
+        if not hasattr(self, 'history_tree'):
+            return
+        self.history_tree.delete(*self.history_tree.get_children())
+        filter_map = {
+            "全部": None,
+            "放货任务": "putaway",
+            "出库任务": "outbound",
+            "状态查询": "query",
+        }
+        selected_type = filter_map.get(self.history_filter.get())
+        for i, record in enumerate(self._history_data):
+            rec_type = record.get("type", "")
+            if selected_type and rec_type != selected_type:
+                continue
+            ts = record.get("timestamp", 0)
+            if ts:
+                try:
+                    time_str = datetime.fromtimestamp(ts / 1000).strftime('%Y-%m-%d %H:%M:%S')
+                except Exception:
+                    time_str = str(ts)
+            else:
+                time_str = "-"
+            type_display = {"putaway": "放货", "outbound": "出库", "query": "查询"}.get(rec_type, rec_type)
+            self.history_tree.insert('', tk.END, iid=str(i), values=(
+                time_str,
+                type_display,
+                record.get("task_id", ""),
+                record.get("summary", ""),
+            ))
+        count = len(self.history_tree.get_children())
+        self.history_count_var.set(f"共 {count} 条记录")
+
+    def _get_selected_history_index(self) -> int | None:
+        selection = self.history_tree.selection()
+        if not selection:
+            messagebox.showwarning("提示", "请先选择一条历史记录")
+            return None
+        return int(selection[0])
+
+    def _history_view_detail(self):
+        idx = self._get_selected_history_index()
+        if idx is None:
+            return
+        if idx >= len(self._history_data):
+            return
+        record = self._history_data[idx]
+        detail = {
+            "type": record.get("type", ""),
+            "timestamp": record.get("timestamp", 0),
+            "task_id": record.get("task_id", ""),
+            "summary": record.get("summary", ""),
+        }
+        if record.get("storage_snapshot"):
+            detail["storage_snapshot"] = record["storage_snapshot"]
+        if record.get("data"):
+            detail["data"] = record["data"]
+        type_label = {"putaway": "放货任务", "outbound": "出库任务", "query": "状态查询"}.get(detail["type"], detail["type"])
+        self._log_response(f"历史记录详情 [{type_label}] {detail.get('task_id', '')}", detail)
+
+    def _history_load_putaway(self):
+        idx = self._get_selected_history_index()
+        if idx is None:
+            return
+        if idx >= len(self._history_data):
+            return
+        record = self._history_data[idx]
+        if record.get("type") != "putaway":
+            messagebox.showwarning("提示", "请选择一条放货任务记录")
+            return
+        task_data = record.get("data", {})
+        put_goods = task_data.get("put_goods", [])
+        if not put_goods:
+            messagebox.showwarning("提示", "该记录没有放货数据")
+            return
+        self.put_tree.delete(*self.put_tree.get_children())
+        for good in put_goods:
+            loc = good.get("storage_location", "")
+            skus = good.get("good_sku", [])
+            count = good.get("abr_count", 0)
+            self.put_tree.insert('', tk.END, values=(loc, ",".join(skus), count))
+        self.put_tid.set(task_data.get("task_id", f"PUT_{int(time.time())}"))
+        self.put_station.set(task_data.get("station_id", "A"))
+        self._last_put_task = copy.deepcopy(task_data)
+        self.notebook.select(1)
+        self._log(f"已加载历史放货任务: {task_data.get('task_id', '')}")
+
+    def _history_load_outbound(self):
+        idx = self._get_selected_history_index()
+        if idx is None:
+            return
+        if idx >= len(self._history_data):
+            return
+        record = self._history_data[idx]
+        if record.get("type") != "outbound":
+            messagebox.showwarning("提示", "请选择一条出库任务记录")
+            return
+        task_data = record.get("data", {})
+        packages = task_data.get("packages", [])
+        if not packages:
+            messagebox.showwarning("提示", "该记录没有出库数据")
+            return
+        self.out_tree.delete(*self.out_tree.get_children())
+        for package in packages:
+            self.out_tree.insert('', tk.END, values=(
+                package.get("package_id", ""),
+                package.get("box_type", ""),
+                package.get("face_sheet", ""),
+                package.get("logistics", ""),
+                package.get("manual_process_type", ""),
+                package.get("packaging_line", ""),
+                ",".join(package.get("goods", [])),
+            ))
+        self.out_tid.set(task_data.get("task_id", f"OUT_{int(time.time())}"))
+        self._last_out_task = copy.deepcopy(task_data)
+        self.notebook.select(2)
+        self._log(f"已加载历史出库任务: {task_data.get('task_id', '')}")
+
+    def _history_delete_selected(self):
+        selection = self.history_tree.selection()
+        if not selection:
+            messagebox.showwarning("提示", "请先选择要删除的记录")
+            return
+        indices = sorted([int(s) for s in selection], reverse=True)
+        for idx in indices:
+            if 0 <= idx < len(self._history_data):
+                del self._history_data[idx]
+        self._save_history_to_file()
+        self._refresh_history_tree()
+        self._log(f"已删除 {len(indices)} 条历史记录")
+
+    def _history_clear(self):
+        if not self._history_data:
+            return
+        if not messagebox.askyesno("确认", "确定要清空所有历史记录吗？此操作不可恢复。"):
+            return
+        self._history_data = []
+        self._save_history_to_file()
+        self._refresh_history_tree()
+        self._log("已清空所有历史记录")
 
     # ────────────── Close ──────────────
 

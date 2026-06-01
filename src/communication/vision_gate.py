@@ -33,13 +33,27 @@ class VisionGateClient:
         self._seq = 0                        
         self._pending_seq = None             
         self._response_event = threading.Event()  
-        self._last_response = None    
+        self._last_response = None
+        self._reconnect_interval = 3.0
+        self._closed = False
+
+    def _cleanup(self) -> None:
+        self._stop_event.set()
+        self._response_event.set()
+        if self.sock:
+            try:
+                self.sock.close()
+            except OSError:
+                pass
+        self.sock = None
+        self.connected = False
 
     # 视觉门连接
     def connect(self) -> None:
         if self.connected:
             logger.warning(f"视觉门已连接,无需重复连接: {self.host}:{self.port}")
             return
+        self._cleanup()
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(5)
@@ -88,15 +102,8 @@ class VisionGateClient:
 
     # 视觉门连接关闭
     def close(self) -> None:
-        self._stop_event.set()
-        self._response_event.set()
-        if self.sock:
-            try:
-                self.sock.close()
-            except OSError:
-                pass
-        self.connected = False
-        self.sock = None
+        self._closed = True
+        self._cleanup()
         logger.info(f"关闭视觉门连接: {self.host}:{self.port}")
 
     # 构建请求
@@ -232,6 +239,20 @@ class VisionGateClient:
         except OSError as e:
             logger.error(f"视觉门接收异常: {self.host}:{self.port}, 错误: {e}")
             self.connected = False
+        finally:
+            if not self._closed:
+                threading.Thread(target=self._auto_reconnect, daemon=True).start()
+
+    def _auto_reconnect(self) -> None:
+        while not self._closed and not self.connected:
+            logger.warning(f"视觉门断开, {self._reconnect_interval:.1f}秒后尝试重连: {self.host}:{self.port}")
+            time.sleep(self._reconnect_interval)
+            try:
+                self.connect()
+                logger.info(f"视觉门重连成功: {self.host}:{self.port}")
+                return
+            except VisionGateCommunicationError:
+                logger.warning(f"视觉门重连失败, 将继续重试: {self.host}:{self.port}")
 
     # 处理接收消息
     def _on_message(self, result: dict) -> None:

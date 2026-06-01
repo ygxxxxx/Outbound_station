@@ -185,9 +185,7 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
             )
 
         if candidate_infos:
-            # 候选包裹之间再按规则 3、规则 12 等排序。
-            # 注意：这里排序的是“当前可出”的包裹，不会把被后排阻挡的包裹提前。
-            # 这一步是动态排序：先遵守前排必须先出的硬规则，再在可出包裹里应用业务优先级。
+            # 候选包裹之间按规则 3、规则 12 等排序
             selected_info = choose_next_package_info(
                 candidate_infos = candidate_infos,
                 last_target_line = last_target_line,
@@ -197,10 +195,7 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
             if selected_package is None:
                 raise ValueError(f"包裹 {selected_info.package_id} 已不在待计划列表中")
 
-            # 同一流水线的单件包裹不需要独占，应优先铺满 A/B/C 中能够供货的全局夹爪。
-            # 如果单件包裹数量超过本批最多六个可用夹爪，再让已经整库位夹货的夹爪
-            # 在后续批次继续放置剩余货物。例如六个夹爪都能提供目标 SKU 时，第一批
-            # 应最多并行出六个单件包裹，而不是持续只使用排序最靠前的一个夹爪。
+            # 同一流水线的单件包裹不需要独占，应优先铺满 A/B/C 中能够供货的全局夹爪
             if is_single_package_info(selected_info):
                 if selected_info.clears_front_blocker:
                     # 清障包裹的优先级高于单件合批铺满夹爪。
