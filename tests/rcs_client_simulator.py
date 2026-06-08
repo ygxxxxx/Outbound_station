@@ -85,6 +85,9 @@ class RCS_Simulator:
     def dispatch_inbound_route(self, route_data: dict) -> dict:
         return self.send_request(self.task_sock, 2001, route_data)
 
+    def notify_clear_station_abnormal(self, station_id: str) -> dict:
+        return self.send_request(self.task_sock, 2003, {"station_id": station_id, "timestamp": int(time.time() * 1000)})
+
     def close(self) -> None:
         if self.status_sock:
             self.status_sock.close()
@@ -196,6 +199,7 @@ class SimulatorApp:
         self._build_query_tab()
         self._build_putaway_tab()
         self._build_outbound_tab()
+        self._build_clear_abnormal_tab()
         self._build_history_tab()
 
     # ──── Query Tab ────
@@ -400,6 +404,42 @@ class SimulatorApp:
 
     # ────────────── Response Panel ──────────────
 
+    def _build_clear_abnormal_tab(self):
+        tab = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(tab, text="  异常解除  ")
+
+        # ── Clear Timeout ──
+        timeout_frame = ttk.LabelFrame(tab, text="解除传送带超时报警 (2001)", padding=10)
+        timeout_frame.pack(fill=tk.X, pady=6)
+
+        ttk.Button(timeout_frame, text="解除所有工作站传送带超时", command=self._q_clear_timeout,
+                   width=28).pack(pady=4)
+
+        # ── Clear Station Abnormal ──
+        clear_abnormal_frame = ttk.LabelFrame(tab, text="解除工作站异常状态 (2003)", padding=10)
+        clear_abnormal_frame.pack(fill=tk.X, pady=6)
+
+        r1 = ttk.Frame(clear_abnormal_frame)
+        r1.pack(fill=tk.X, pady=4)
+
+        ttk.Label(r1, text="工作站:").pack(side=tk.LEFT, padx=(0, 4))
+        self.clear_abnormal_station_var = tk.StringVar(value="A")
+        ttk.Combobox(r1, textvariable=self.clear_abnormal_station_var,
+                     values=list(STATION_IDS), width=4, state="readonly").pack(side=tk.LEFT, padx=(0, 20))
+
+        ttk.Button(r1, text="解除异常状态", command=self._t_clear_abnormal, width=14).pack(side=tk.LEFT, padx=4)
+
+        r2 = ttk.Frame(clear_abnormal_frame)
+        r2.pack(fill=tk.X, pady=4)
+
+        ttk.Label(r2, text="快捷:").pack(side=tk.LEFT, padx=(0, 8))
+        for station in STATION_IDS:
+            ttk.Button(r2, text=f"解除{station}站异常",
+                       command=lambda s=station: self._clear_abnormal_quick(s),
+                       width=12).pack(side=tk.LEFT, padx=4)
+
+    # ────────────── Response Panel ──────────────
+
     def _build_response_panel(self):
         frame = ttk.LabelFrame(self.root, text="响应结果", padding=4)
         frame.pack(fill=tk.BOTH, padx=10, pady=(0, 4))
@@ -548,6 +588,32 @@ class SimulatorApp:
             "summary": label,
             "data": resp,
         })
+
+    def _t_clear_abnormal(self):
+        station = self.clear_abnormal_station_var.get()
+        self._send_clear_abnormal(station)
+
+    def _clear_abnormal_quick(self, station: str):
+        self.clear_abnormal_station_var.set(station)
+        self._send_clear_abnormal(station)
+
+    def _send_clear_abnormal(self, station: str):
+        if not self._require_connection():
+            return
+
+        def do():
+            resp = self.simulator.notify_clear_station_abnormal(station)
+            self.root.after(0, lambda: self._log_response(f"解除工作站异常状态(2003) - 工作站{station}", resp))
+            self._add_history_record({
+                "type": "query",
+                "timestamp": int(time.time() * 1000),
+                "task_id": "",
+                "summary": f"解除异常状态 - 工作站{station}",
+                "data": resp,
+            })
+
+        self._run_in_thread(do)
+        self._log(f"已发送解除工作站异常状态通知: 工作站{station}")
 
     # ────────────── Putaway Actions ──────────────
 

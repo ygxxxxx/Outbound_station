@@ -12494,5 +12494,1411 @@
         }
       ]
     }
+  },
+  {
+    "type": "putaway",
+    "timestamp": 1780651976122,
+    "task_id": "PUT_1780651825",
+    "summary": "4个库位, 16件货物, 工作站=A",
+    "data": {
+      "task_id": "PUT_1780651825",
+      "task_types": "putaway",
+      "timestamp": "1780651976122",
+      "station_id": "A",
+      "put_goods": [
+        {
+          "storage_location": "A11",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A12",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A13",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A14",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "outbound",
+    "timestamp": 1780652026203,
+    "task_id": "OUT_1780651987",
+    "summary": "11个包裹, 11件货物",
+    "data": {
+      "task_id": "OUT_1780651987",
+      "task_types": "outbound",
+      "timestamp": "1780652026203",
+      "package_count": 11,
+      "packages": [
+        {
+          "package_id": "PKG_1780652010_1",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_2",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_3",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_4",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_5",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_6",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_7",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_8",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_9",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_10",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "1",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "putaway",
+    "timestamp": 1780652157917,
+    "task_id": "PUT_1780651825",
+    "summary": "4个库位, 16件货物, 工作站=A",
+    "data": {
+      "task_id": "PUT_1780651825",
+      "task_types": "putaway",
+      "timestamp": "1780652157917",
+      "station_id": "A",
+      "put_goods": [
+        {
+          "storage_location": "A11",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A12",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A13",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A14",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "outbound",
+    "timestamp": 1780652162365,
+    "task_id": "OUT_1780651987",
+    "summary": "11个包裹, 11件货物",
+    "data": {
+      "task_id": "OUT_1780651987",
+      "task_types": "outbound",
+      "timestamp": "1780652162365",
+      "package_count": 11,
+      "packages": [
+        {
+          "package_id": "PKG_1780652010_1",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_2",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_3",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_4",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_5",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_6",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_7",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_8",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_9",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_10",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "1",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "putaway",
+    "timestamp": 1780652275646,
+    "task_id": "PUT_1780651825",
+    "summary": "4个库位, 16件货物, 工作站=A",
+    "data": {
+      "task_id": "PUT_1780651825",
+      "task_types": "putaway",
+      "timestamp": "1780652275646",
+      "station_id": "A",
+      "put_goods": [
+        {
+          "storage_location": "A11",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A12",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A13",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A14",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "outbound",
+    "timestamp": 1780652283311,
+    "task_id": "OUT_1780651987",
+    "summary": "11个包裹, 11件货物",
+    "data": {
+      "task_id": "OUT_1780651987",
+      "task_types": "outbound",
+      "timestamp": "1780652283311",
+      "package_count": 11,
+      "packages": [
+        {
+          "package_id": "PKG_1780652010_1",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_2",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_3",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_4",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_5",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_6",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_7",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_8",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_9",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780652010_10",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "1",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "putaway",
+    "timestamp": 1780652850081,
+    "task_id": "PUT_1780651825",
+    "summary": "4个库位, 16件货物, 工作站=A",
+    "data": {
+      "task_id": "PUT_1780651825",
+      "task_types": "putaway",
+      "timestamp": "1780652850081",
+      "station_id": "A",
+      "put_goods": [
+        {
+          "storage_location": "A11",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A12",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A13",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A14",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "putaway",
+    "timestamp": 1780652981767,
+    "task_id": "PUT_1780651825",
+    "summary": "4个库位, 16件货物, 工作站=A",
+    "data": {
+      "task_id": "PUT_1780651825",
+      "task_types": "putaway",
+      "timestamp": "1780652981767",
+      "station_id": "A",
+      "put_goods": [
+        {
+          "storage_location": "A11",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A12",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A13",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A14",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "putaway",
+    "timestamp": 1780652987846,
+    "task_id": "PUT_1780652986",
+    "summary": "4个库位, 16件货物, 工作站=A",
+    "data": {
+      "task_id": "PUT_1780652986",
+      "task_types": "putaway",
+      "timestamp": "1780652987846",
+      "station_id": "A",
+      "put_goods": [
+        {
+          "storage_location": "A11",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A12",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A13",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A14",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "putaway",
+    "timestamp": 1780653005773,
+    "task_id": "PUT_1780652986",
+    "summary": "4个库位, 16件货物, 工作站=A",
+    "data": {
+      "task_id": "PUT_1780652986",
+      "task_types": "putaway",
+      "timestamp": "1780653005773",
+      "station_id": "A",
+      "put_goods": [
+        {
+          "storage_location": "A11",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A12",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A13",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A14",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "putaway",
+    "timestamp": 1780655267974,
+    "task_id": "PUT_1780655220",
+    "summary": "4个库位, 16件货物, 工作站=A",
+    "data": {
+      "task_id": "PUT_1780655220",
+      "task_types": "putaway",
+      "timestamp": "1780655267974",
+      "station_id": "A",
+      "put_goods": [
+        {
+          "storage_location": "A11",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A12",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A13",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A14",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "putaway",
+    "timestamp": 1780655324756,
+    "task_id": "PUT_1780655220",
+    "summary": "4个库位, 16件货物, 工作站=A",
+    "data": {
+      "task_id": "PUT_1780655220",
+      "task_types": "putaway",
+      "timestamp": "1780655324756",
+      "station_id": "A",
+      "put_goods": [
+        {
+          "storage_location": "A11",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A12",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A13",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A14",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "outbound",
+    "timestamp": 1780655335405,
+    "task_id": "OUT_1780655220",
+    "summary": "16个包裹, 32件货物",
+    "data": {
+      "task_id": "OUT_1780655220",
+      "task_types": "outbound",
+      "timestamp": "1780655335405",
+      "package_count": 16,
+      "packages": [
+        {
+          "package_id": "PKG_1780655333_1",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_2",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_3",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_4",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_5",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_6",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_7",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_8",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_9",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_10",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_11",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_12",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_13",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_14",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_15",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655333_16",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU2"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "putaway",
+    "timestamp": 1780655361221,
+    "task_id": "PUT_1780655220",
+    "summary": "4个库位, 16件货物, 工作站=A",
+    "data": {
+      "task_id": "PUT_1780655220",
+      "task_types": "putaway",
+      "timestamp": "1780655361220",
+      "station_id": "A",
+      "put_goods": [
+        {
+          "storage_location": "A11",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A12",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A13",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "storage_location": "A14",
+          "abr_count": 4,
+          "good_sku": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "type": "outbound",
+    "timestamp": 1780655364773,
+    "task_id": "OUT_1780655220",
+    "summary": "16个包裹, 16件货物",
+    "data": {
+      "task_id": "OUT_1780655220",
+      "task_types": "outbound",
+      "timestamp": "1780655364773",
+      "package_count": 16,
+      "packages": [
+        {
+          "package_id": "PKG_1780655359_1",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_2",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_3",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_4",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_5",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_6",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_7",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_8",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_9",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_10",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_11",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_12",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_13",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_14",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_15",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_1780655359_16",
+          "box_type": "DW01-A",
+          "face_sheet": "FS1",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        }
+      ]
+    }
   }
 ]

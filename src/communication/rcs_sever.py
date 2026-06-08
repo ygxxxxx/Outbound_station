@@ -33,6 +33,9 @@ class CmdType:
     CLEAR_CONVEYOR_TIMEOUT_REQ = 2001     # 下发解除库位传送带运行超时警告指令
     CLEAR_CONVEYOR_TIMEOUT_RES = 12001
 
+    NOTIFY_CLEAR_STATION_ABNORMAL_REQ = 2003    # 下发解除工作站异常状态通知
+    NOTIFY_CLEAR_STATION_ABNORMAL_RES = 12003  
+
 # RCS通信模块（作为服务端）
 class RCS_Sever:
     def __init__(
@@ -235,6 +238,12 @@ if __name__ == '__main__':
     def handle_task_request(cmd: int, body_dict: dict) -> dict:
         if cmd == CmdType.OUTBOUND_TASK_DISPATCH_REQ:
             logger.info(f"收到任务下发: {body_dict}")
+            return build_common_response()
+        elif cmd == CmdType.CLEAR_CONVEYOR_TIMEOUT_REQ:
+            logger.info(f"收到解除传送带超时: {body_dict}")
+            return build_common_response()
+        elif cmd == CmdType.NOTIFY_CLEAR_STATION_ABNORMAL_REQ:
+            logger.info(f"收到解除工作站异常状态: {body_dict}")
             return build_common_response()
         else:
             return build_common_response(ret_code=-1, err_msg=f"不支持: {cmd}")

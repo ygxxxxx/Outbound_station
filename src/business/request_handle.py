@@ -169,8 +169,18 @@ def handle_task_request(task_manager: TaskManager, state_machine: StateMachine, 
             
             return build_common_response()
 
+        elif cmd == CmdType.NOTIFY_CLEAR_STATION_ABNORMAL_REQ:
+            station_id = body_dict.get("station_id")
+
+            if not station_id or station_id not in _VALID_STATION_IDS:
+                return build_common_response(ret_code=-1, err_msg=f"无效的工作站编号: {station_id}")
+            if not state_machine.transition(station_id, StationState.IDLE, reason="收到解除工作站异常状态通知"):
+                return build_common_response(ret_code=-1, err_msg=f"工作站 {station_id} 无法从当前状态切换到 IDLE")
+            return build_common_response()
+        
         else:
             return build_common_response(ret_code=-1, err_msg=f"不支持的任务类型: {cmd}")
+        
     except Exception as e:
         logger.error(f"任务接收处理异常: cmd={cmd}, error={e}")
         return build_common_response(ret_code=-1, err_msg=f"内部错误: {e}")

@@ -8931,5 +8931,241 @@
         }
       ]
     }
+  },
+  {
+    "created_at": 1780651987843,
+    "storage": [
+      {
+        "storage_bin": "A11",
+        "qty": 4,
+        "goods": [
+          "SKU1",
+          "SKU1",
+          "SKU1",
+          "SKU1"
+        ]
+      },
+      {
+        "storage_bin": "A12",
+        "qty": 4,
+        "goods": [
+          "SKU1",
+          "SKU1",
+          "SKU1",
+          "SKU1"
+        ]
+      },
+      {
+        "storage_bin": "A13",
+        "qty": 4,
+        "goods": [
+          "SKU1",
+          "SKU1",
+          "SKU1",
+          "SKU1"
+        ]
+      },
+      {
+        "storage_bin": "A14",
+        "qty": 4,
+        "goods": [
+          "SKU1",
+          "SKU1",
+          "SKU1",
+          "SKU1"
+        ]
+      },
+      {
+        "storage_bin": "A21",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A22",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A23",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A24",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A31",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A32",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A33",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A34",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A41",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A42",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A43",
+        "qty": 0,
+        "goods": []
+      },
+      {
+        "storage_bin": "A44",
+        "qty": 0,
+        "goods": []
+      }
+    ],
+    "storage_summary": {
+      "slot_count": 16,
+      "non_empty_slot_count": 4,
+      "total_goods": 16,
+      "sku_counts": {
+        "SKU1": 16
+      }
+    },
+    "outbound_task": {
+      "task_id": "OUT_1780651987",
+      "task_types": "outbound",
+      "timestamp": "1780651987843",
+      "package_count": 9,
+      "packages": [
+        {
+          "package_id": "PKG_AUTO_1780651987_008",
+          "box_type": "DW01-B",
+          "face_sheet": "FS_AUTO_008",
+          "logistics": "jd",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1780651987_001",
+          "box_type": "DW02-B",
+          "face_sheet": "FS_AUTO_001",
+          "logistics": "yuantong",
+          "manual_process_type": "N",
+          "packaging_line": "MP1",
+          "count": 4,
+          "goods": [
+            "SKU1",
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1780651987_002",
+          "box_type": "DW01-B",
+          "face_sheet": "FS_AUTO_002",
+          "logistics": "zhongtong",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1780651987_009",
+          "box_type": "DW02-A",
+          "face_sheet": "FS_AUTO_009",
+          "logistics": "jd",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1780651987_003",
+          "box_type": "DW01-A",
+          "face_sheet": "FS_AUTO_003",
+          "logistics": "zhongtong",
+          "manual_process_type": "N",
+          "packaging_line": "MP1",
+          "count": 3,
+          "goods": [
+            "SKU1",
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1780651987_005",
+          "box_type": "DW02-A",
+          "face_sheet": "FS_AUTO_005",
+          "logistics": "shunfeng",
+          "manual_process_type": "N",
+          "packaging_line": "HS2",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1780651987_006",
+          "box_type": "DW02-A",
+          "face_sheet": "FS_AUTO_006",
+          "logistics": "zhongtong",
+          "manual_process_type": "N",
+          "packaging_line": "MP1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1780651987_004",
+          "box_type": "DW01-B",
+          "face_sheet": "FS_AUTO_004",
+          "logistics": "jd",
+          "manual_process_type": "N",
+          "packaging_line": "MP1",
+          "count": 2,
+          "goods": [
+            "SKU1",
+            "SKU1"
+          ]
+        },
+        {
+          "package_id": "PKG_AUTO_1780651987_007",
+          "box_type": "DW01-A",
+          "face_sheet": "FS_AUTO_007",
+          "logistics": "ems",
+          "manual_process_type": "N",
+          "packaging_line": "HS1",
+          "count": 1,
+          "goods": [
+            "SKU1"
+          ]
+        }
+      ]
+    }
   }
 ]
