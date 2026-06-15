@@ -333,6 +333,12 @@ class Task_Processing:
                     f"{move.to_location}(layer={move.to_layer}), goods={move.goods}"
                 )
 
+            for forward in batch.before_forwards:
+                logger.info(
+                    f"  批次前库位补位: 工作站={forward.station_code}, "
+                    f"layer={forward.layer}, moved_goods={forward.moved_goods}"
+                )
+
             for station_plan in batch.station_plans:
                 for action in station_plan.actions:
                     if action.action_type == "idle":
@@ -392,6 +398,7 @@ class Task_Processing:
 
             self._execute_batch_before_backwards(batch)
             self._execute_batch_before_moves(batch)
+            self._execute_batch_before_forwards(batch)
             self._execute_required_front_refill_before_batch(batch)
             self._execute_batch(
                 batch,
@@ -470,6 +477,22 @@ class Task_Processing:
                 f"批次 {batch.batch_no} 库位移动库存同步完成: "
                 f"{move.from_location}->{move.to_location}, goods={moved_goods}"
             )
+
+    # 执行策略计划的后排补位动作。它必须发生在库位移动之后、夹爪取货之前。
+    def _execute_batch_before_forwards(self, batch: OutboundBatch) -> None:
+        for action in batch.before_forwards:
+            logger.info(
+                f"批次 {batch.batch_no} 执行前库位补位: "
+                f"工作站={action.station_code}, layer={action.layer}, "
+                f"planned_moved={action.moved_goods}"
+            )
+            moved_goods = self._execute_front_refill(action.station_code, action.layer, batch.batch_no)
+            if moved_goods != action.moved_goods:
+                raise RuntimeError(
+                    f"批次 {batch.batch_no} 库位补位库存不一致: "
+                    f"plan={action.moved_goods}, actual={moved_goods}, "
+                    f"station={action.station_code}, layer={action.layer}"
+                )
 
     # 解析出库批次并执行
     def _execute_batch(self, batch: OutboundBatch, package_lookup: dict, return_remaining_boxes: bool = False) -> None:
@@ -575,13 +598,13 @@ class Task_Processing:
 
             if self.plc_service.read_outbound_complete():
                 logger.info(f"批次 {batch.batch_no} PLC 确认出库完成")
-                #photo_count = self.plc_service.read_outbound_photo_count()
-                #if photo_count != batch.outbound_count:
-                    #raise RuntimeError(
-                        #f"批次 {batch.batch_no} 光电计数不一致: "
-                        #f"expected={batch.outbound_count}, actual={photo_count}"
-                    #)
-                #logger.info(f"批次 {batch.batch_no} PLC 确认出库完成, 光电计数={photo_count}")
+                photo_count = self.plc_service.read_outbound_photo_count()
+                if photo_count != batch.outbound_count:
+                    raise RuntimeError(
+                        f"批次 {batch.batch_no} 光电计数不一致: "
+                        f"expected={batch.outbound_count}, actual={photo_count}"
+                    )
+                logger.info(f"批次 {batch.batch_no} PLC 确认出库完成, 光电计数={photo_count}")
                 return
 
             if time.time() > deadline:
@@ -828,10 +851,11 @@ class Task_Processing:
             self._execute_front_refill(station_code, layer, batch.batch_no)
 
     # 控制某一层后排货物向前补位，并在设备到位后更新 CabinetStore
-    def _execute_front_refill(self, station_code: str, layer: int, batch_no: int) -> None:
+    def _execute_front_refill(self, station_code: str, layer: int, batch_no: int) -> dict[str, list[str]]:
         station_id = self._parse_station_id(station_code)
         logger.info(f"批次 {batch_no} 执行前进行库位补位: 工作站={station_code}, layer={layer}")
 
+        self._wait_front_photo_clear_before_refill(station_id, layer, batch_no)
         self.plc_service.command_cabinet_forward(station_id, layer)
         self._wait_front_refill_complete(station_id, layer, batch_no)
 
@@ -840,6 +864,35 @@ class Task_Processing:
             raise RuntimeError(f"批次 {batch_no} 补位完成但未找到可移动货物: {station_code}{layer}层")
 
         logger.info(f"批次 {batch_no} 库位补位库存同步完成: {moved_goods}")
+        return moved_goods
+
+    # 补位前必须先确认前光电已经空出来。否则旧的前光电触发会让补位等待立刻误判完成。
+    def _wait_front_photo_clear_before_refill(
+        self,
+        station_id: int,
+        layer: int,
+        batch_no: int,
+        timeout: float = 8.0,
+    ) -> None:
+        deadline = time.time() + timeout
+
+        while not self._stop_event.is_set():
+            if self.plc_service.is_emergency_stop():
+                raise RuntimeError(f"批次 {batch_no} 补位前等待前光电清空时触发急停")
+
+            if not self.plc_service.is_photo_triggered(station_id, layer, "front"):
+                logger.info(f"批次 {batch_no} 补位前确认: 工作站{station_id} {layer}层前光电已清空")
+                return
+
+            if time.time() > deadline:
+                raise TimeoutError(
+                    f"批次 {batch_no} 补位前等待工作站{station_id} {layer}层前光电清空超时，"
+                    f"禁止直接夹取前排计划库位"
+                )
+
+            self._stop_event.wait(timeout=0.2)
+
+        raise RuntimeError(f"任务停止，批次 {batch_no} 等待补位前前光电清空中断")
 
     # 等待传送带把后排货物送到前排位置
     def _wait_front_refill_complete(

@@ -207,8 +207,10 @@ class PLC_Service:
     # 库位传送带转动指令
     def command_cabinet_forward(self, station_id: int, layer: int) -> bool:
         addr = CabinetCtrlAddr.forward_addr(station_id, layer)
+        self._plc_client.write_holding_registers(addr, [0])
+        time.sleep(0.05)
         self._plc_client.write_holding_registers(addr, [1])
-        logger.info(f"工作站{station_id} {layer}层: 已下发库位转动指令")
+        logger.info(f"工作站{station_id} {layer}层: 已下发库位转动指令 D{addr}=1")
         return True
 
     # 库位传送带后退命令

@@ -17,6 +17,7 @@ from src.models.outbound_plan_model import (
     PlacedItem,
     LocationMoveAction,
     CabinetBackwardAction,
+    CabinetForwardAction,
 )
 from src.models.outbound_task_model import Package
 
@@ -101,6 +102,7 @@ class PackagePlanInfo:
     clears_front_blocker: bool   # 是否正在清理会阻挡后排补位的前排库位
     before_backwards: list[CabinetBackwardAction] = field(default_factory=list) # 这个计划段执行前需要先做的库位后退
     before_moves: list[LocationMoveAction] = field(default_factory=list)        # 这个计划段执行前需要先做的库位移动
+    before_forwards: list[CabinetForwardAction] = field(default_factory=list)    # 这个计划段执行前需要先做的后排补位
 
 
 # 表示已经下发或准备下发的一次真实夹取动作。
@@ -150,6 +152,7 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
     package_infos: list[PackagePlanInfo] = []
     pending_before_backwards: list[CabinetBackwardAction] = []
     pending_before_moves: list[LocationMoveAction] = []
+    pending_before_forwards: list[CabinetForwardAction] = []
     forced_package_id: str | None = None
     last_target_line: str | None = None
     same_line_batch_count = 0
@@ -229,10 +232,12 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
                 batch_group_id = batch_group_id,
                 before_backwards = pending_before_backwards,
                 before_moves = pending_before_moves,
+                before_forwards = pending_before_forwards,
             )
             package_infos.append(selected_info)
             pending_before_backwards = []
             pending_before_moves = []
+            pending_before_forwards = []
             consume_remaining_goods(
                 remaining_goods_by_package,
                 selected_info.package_id,
@@ -263,8 +268,10 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
             continue
 
         # 当前没有任何包裹能直接出库时，尝试把已经清空前排的后排货物补位到 1、2 位。
-        if shift_back_goods_to_front(simulated_inventory):
+        forward_actions = shift_back_goods_to_front(simulated_inventory)
+        if forward_actions:
             # Refill changes the real slot state, so later single packages must not be merged into earlier batches.
+            pending_before_forwards.extend(forward_actions)
             batch_group_id += 1
             single_wave_line = None
             single_wave_grippers = set()
@@ -277,7 +284,13 @@ def build_package_infos(packages: list[Package], cabinet_store: CabinetStore) ->
             batch_group_id = batch_group_id,
         )
         if same_package_info is not None:
+            same_package_info.before_backwards.extend(pending_before_backwards)
+            same_package_info.before_moves.extend(pending_before_moves)
+            same_package_info.before_forwards.extend(pending_before_forwards)
             package_infos.append(same_package_info)
+            pending_before_backwards = []
+            pending_before_moves = []
+            pending_before_forwards = []
             consume_remaining_goods(
                 remaining_goods_by_package,
                 same_package_info.package_id,
@@ -385,6 +398,7 @@ def build_package_info(
     batch_group_id: int = 0,
     before_backwards: list[CabinetBackwardAction] | None = None,
     before_moves: list[LocationMoveAction] | None = None,
+    before_forwards: list[CabinetForwardAction] | None = None,
 ) -> PackagePlanInfo:
     station_codes = sorted({slot_pick.station_code for slot_pick in slot_picks})
     target_line = normalize_line(package.packaging_line, package.manual_process_type)
@@ -402,6 +416,7 @@ def build_package_info(
         batch_group_id = batch_group_id,
         before_backwards = list(before_backwards or []),
         before_moves = list(before_moves or []),
+        before_forwards = list(before_forwards or []),
     )
 
 def package_clears_front_blocker(
@@ -727,8 +742,8 @@ def build_simulated_inventory_from_store(cabinet_store: CabinetStore) -> dict[st
         simulated_inventory[slot.location_code] = list(slot.goods)
     return simulated_inventory
 
-def shift_back_goods_to_front(simulated_inventory: dict[str, list[str]]) -> bool:
-    moved = False
+def shift_back_goods_to_front(simulated_inventory: dict[str, list[str]]) -> list[CabinetForwardAction]:
+    actions: list[CabinetForwardAction] = []
     station_codes = sorted({location_code[0] for location_code in simulated_inventory})
 
     for station_code in station_codes:
@@ -740,6 +755,7 @@ def shift_back_goods_to_front(simulated_inventory: dict[str, list[str]]) -> bool
             if any(simulated_inventory.get(location_code, []) for location_code in front_locations):
                 continue
 
+            moved_goods: dict[str, list[str]] = {}
             for back_position, front_position in BACK_TO_FRONT_POSITION.items():
                 back_location = f"{station_code}{layer}{back_position}"
                 front_location = f"{station_code}{layer}{front_position}"
@@ -749,10 +765,20 @@ def shift_back_goods_to_front(simulated_inventory: dict[str, list[str]]) -> bool
 
                 simulated_inventory[front_location] = list(back_goods)
                 simulated_inventory[back_location] = []
-                moved = True
+                moved_goods[f"{back_location}->{front_location}"] = list(back_goods)
                 logger.info(f"模拟后排补位: {back_location} -> {front_location}, goods={back_goods}")
 
-    return moved
+            if moved_goods:
+                actions.append(
+                    CabinetForwardAction(
+                        station_code = station_code,
+                        station_id = station_id_from_code(station_code),
+                        layer = layer,
+                        moved_goods = moved_goods,
+                    )
+                )
+
+    return actions
 
 def build_unschedulable_message(
     pending_packages: list[Package],
@@ -1063,6 +1089,7 @@ def attach_pre_actions_to_batch(batch: OutboundBatch, infos: list[PackagePlanInf
     for info in infos:
         batch.before_backwards.extend(info.before_backwards)
         batch.before_moves.extend(info.before_moves)
+        batch.before_forwards.extend(info.before_forwards)
 
 def reuse_consecutive_physical_picks(batches: list[OutboundBatch]) -> None:
     active_picks: dict[tuple[int, str], ActivePhysicalPick] = {}

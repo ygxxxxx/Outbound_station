@@ -64,6 +64,15 @@ class CabinetBackwardAction:
     moved_goods: dict[str, list[str]] = field(default_factory=dict) # 模拟库存中本次后退移动的货物
 
 
+# 库位传送带前进补位动作，用于把同层 3/4 位货物送到 1/2 位
+@dataclass
+class CabinetForwardAction:
+    station_code: str           # 工作站编码
+    station_id: int             # 工作站id
+    layer: int                  # 需要前进补位的层号
+    moved_goods: dict[str, list[str]] = field(default_factory=dict) # 模拟库存中本次前进补位的货物
+
+
 # 表示三台工作站六个夹爪的一批出库安排
 @dataclass
 class OutboundBatch:
@@ -78,6 +87,7 @@ class OutboundBatch:
     outbound_count: int = 0      # 本批次真实放到出库流水线上的鞋盒数量，PLC 用它控制速度并校验出库数量
     before_backwards: list[CabinetBackwardAction] = field(default_factory=list)
     before_moves: list[LocationMoveAction] = field(default_factory=list)
+    before_forwards: list[CabinetForwardAction] = field(default_factory=list)
 
 # 用于记录一个包裹在计划中的连续出库段
 @dataclass
