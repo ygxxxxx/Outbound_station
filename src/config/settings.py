@@ -1,7 +1,11 @@
+import os
 import yaml
 from pathlib import Path
 from dataclasses import dataclass, field
 from src.utils.logger import logger
+
+# 项目根目录（基于本文件位置定位，不依赖当前工作目录 CWD）
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 logger = logger.bind(tag = "settings") # 绑定日志标签为settings模块
 
@@ -10,7 +14,7 @@ logger = logger.bind(tag = "settings") # 绑定日志标签为settings模块
 class PLCConfig:
     plc_address: str = "192.168.1.88"
     plc_port: int = 502
-    timeout: int = 5000
+    timeout: int = 5
     read_cycle: int = 10
 
 @dataclass
@@ -38,7 +42,11 @@ class Config:
 
 
 # 加载config文件
-def load_config(path="config/config.yaml"):
+def load_config(path=None):
+    if path is None:
+        # 支持环境变量 OUTBOUND_CONFIG 指定配置文件，便于部署时切换配置而不改代码
+        env_path = os.environ.get("OUTBOUND_CONFIG")
+        path = Path(env_path) if env_path else PROJECT_ROOT / "config" / "config.yaml"
     p = Path(path)
     try:
         data = {}

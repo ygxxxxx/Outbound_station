@@ -54,7 +54,7 @@ class PLC_Client:
             )
     
     # 重试连接
-    def _ensure_connection(self, max_retries: int = 3, interval: float = 1.0, backoff: float = 1.0) -> None:
+    def _ensure_connection(self, max_retries: int = 3, interval: float = 1.0, backoff: float = 1.0, max_interval: float = 30.0) -> None:
         if self._client.connected:
             return
         retry_count = 0
@@ -82,7 +82,7 @@ class PLC_Client:
                 f"{self.host}:{self.port}"
             )
             time.sleep(current_interval)
-            current_interval *= backoff
+            current_interval = min(current_interval * backoff, max_interval)
 
         
     # 断开PLC连接

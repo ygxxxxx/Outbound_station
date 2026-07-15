@@ -1,8 +1,10 @@
 from loguru import logger
 import sys
-import os
+from pathlib import Path
 
-os.makedirs("logs", exist_ok=True)  # 建立logs文件夹
+# 日志目录基于项目根目录定位，不依赖当前工作目录 CWD
+LOG_DIR = Path(__file__).resolve().parent.parent.parent / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)  # 建立logs文件夹
 
 logger.remove()  # 移除logger默认配置
 logger.configure(extra={"tag": "unknown"})
@@ -22,7 +24,7 @@ logger.add(
 # 日志文件达到50MB时自动切分，保留30天的日志，过期日志自动删除，旧日志压缩为gz格式
 # 显示异常的完整堆栈与变量信息
 logger.add(
-    "logs/log.log",
+    str(LOG_DIR / "log.log"),
     level="INFO",
     format="{time} - {level:<8} - {extra[tag]} - {function} - {line} - {message} ",
     rotation="50 MB",

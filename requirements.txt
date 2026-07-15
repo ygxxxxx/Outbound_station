@@ -1,0 +1,4 @@
+# 运行时依赖（与 pyproject.toml [tool.poetry.dependencies] 保持一致，Python 3.10.x）
+loguru>=0.7.3,<0.8.0
+pyyaml>=6.0.3,<7.0.0
+pymodbus==3.5.4

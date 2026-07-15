@@ -2,7 +2,7 @@
 PLC:
     plc_address: "192.168.1.88"           # PLC 地址
     plc_port: 502               # PLC 端口号
-    timeout: 5000            # 通信超时时间 (ms) 
+    timeout: 5               # 通信超时时间 (秒，直接传给 pymodbus)
     read_cycle: 10           # PLC 读取周期（ms）
 
 # RCS 接口设置

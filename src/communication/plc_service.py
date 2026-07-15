@@ -33,7 +33,8 @@ class PLC_Service:
         self._fault_check_callback = callback
 
     def start_connects(self) -> None:
-        self._plc_client._ensure_connection(max_retries= -1, interval = 3.0, backoff = 1.0)
+        # max_retries=-1 表示持续重连直到 PLC 恢复；backoff 指数退避避免长时间离线时日志频繁刷屏
+        self._plc_client._ensure_connection(max_retries=-1, interval=3.0, backoff=1.5, max_interval=30.0)
 
     def close(self) -> None:
         self.stop_status_polling()
